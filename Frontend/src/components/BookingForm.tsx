@@ -29,7 +29,7 @@ import BookedList from "@/components/BookedList"
 import withAuth from "@/hoc/WithAuth"
 import Loader from "@/components/Loader"
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 interface BookedSpot {
     startTime: Date

@@ -1,5 +1,0 @@
-# Example Liquibase CLI properties (do not commit real credentials)
-url: ${SPRING_DATASOURCE_URL}
-username: ${SPRING_DATASOURCE_USERNAME}
-password: ${SPRING_DATASOURCE_PASSWORD}
-changeLogFile: db/changelog/db.changelog-master.yaml

@@ -1,0 +1,11 @@
+.git
+.idea
+.vscode
+*.iml
+build
+.gradle
+.env
+.env.local
+*.properties.local
+liquibase.properties
+*.log

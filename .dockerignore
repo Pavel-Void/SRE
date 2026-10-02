@@ -1,0 +1,15 @@
+.git
+.idea
+.vscode
+*.iml
+.env
+.env.local
+.env.*.local
+*.properties.local
+liquibase.properties
+node_modules
+.next
+build
+.gradle
+dist
+*.log

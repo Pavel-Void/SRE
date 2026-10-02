@@ -16,25 +16,30 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
-export default function LoginForm() {
+export default function RegisterForm() {
+    const router = useRouter()
     const [email, setUserName] = useState('')
     const [password, setPassword] = useState('')
-    const router = useRouter()
+    const [confirmPassword, setConfirmPassword] = useState('')
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault()
+        if (password !== confirmPassword) {
+            toast('Пароли не совпадают')
+            return
+        }
         try {
-            const response = await axios.post(`${apiUrl}/api/login`, { email, password })
+            const response = await axios.post(`${apiUrl}/api/register`, { email, password })
             const { token, refreshToken } = response.data
             localStorage.setItem('token', token)
             localStorage.setItem('refreshToken', refreshToken)
-            console.log('Login successful')
+            console.log('Registration successful')
             router.push('/parkings')
         } catch (error) {
-            console.error('Login failed', error)
-            toast('Ошибка входа')
+            console.error('Registration failed', error)
+            toast('Ошибка регистрации')
             router.push('/autorization')
         }
     }
@@ -43,9 +48,9 @@ export default function LoginForm() {
         <form onSubmit={handleSubmit}>
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-2xl">Вход</CardTitle>
+                    <CardTitle className="text-2xl">Регистрация</CardTitle>
                     <CardDescription className="text-gray-500">
-                        Введите свои учетные данные
+                        Создайте новую учетную запись
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
@@ -73,9 +78,23 @@ export default function LoginForm() {
                             required
                         />
                     </div>
+                    <div className="space-y-1">
+                        <Label htmlFor="confirmPassword">
+                            Подтвердите пароль
+                        </Label>
+                        <Input
+                            type="password"
+                            id="confirmPassword"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            required
+                        />
+                    </div>
                 </CardContent>
                 <CardFooter className="flex justify-between items-center">
-                    <Button type="submit">Войти</Button>
+                    <Button type="submit">
+                        Зарегистрироваться
+                    </Button>
                 </CardFooter>
             </Card>
         </form>

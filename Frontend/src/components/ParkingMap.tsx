@@ -5,7 +5,7 @@ import withAuth from "@/hoc/WithAuth"
 import axios from "axios"
 import Loader from '@/components/Loader'
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 interface Spot {
     id: number

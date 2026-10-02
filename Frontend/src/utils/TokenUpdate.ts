@@ -3,7 +3,7 @@
 import axios from 'axios'
 import { useRouter } from 'next/navigation'
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 function handleInvalidToken(router: ReturnType<typeof useRouter>) {
     localStorage.removeItem('token')

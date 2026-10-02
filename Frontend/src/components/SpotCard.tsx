@@ -29,7 +29,7 @@ interface Props {
 }
 
 const updateTime = 20000 // В миллисекундах
-const apiUrl = process.env.NEXT_PUBLIC_API_URL
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 export default function SpotCard({ title, location, endTime, startTime, parkingId, spotId, onDelete } : Props) {
     const [currentDate, setCurrentDate] = useState<Date>(new Date())
