@@ -1,0 +1,43 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-activate-future-booking-function
+      author: Pavel_Aleksandrov
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              CREATE FUNCTION activate_future_booking(now_param timestamp without time zone) 
+              RETURNS void AS $$
+              BEGIN
+                UPDATE booking_logs
+                SET activated = false
+                WHERE released_at <= now_param AND activated = true;
+              
+                UPDATE booking_logs
+                SET activated = true
+                WHERE booked_at <= now_param AND released_at > now_param 
+                  AND activated = false;
+              
+                UPDATE places p
+                SET user_id = bl.user_id,
+                  is_occupied = true,
+                  booking_time = bl.booked_at,
+                  parking_end_time = bl.released_at
+                FROM booking_logs bl
+                WHERE bl.booked_at = (
+                  SELECT MAX(bl2.booked_at)
+                  FROM booking_logs bl2
+                  WHERE bl2.place_number = p.place_number
+                    AND bl2.parking_id = p.parking_id
+                    AND bl2.booked_at <= now_param
+                    AND bl2.activated = true
+                    AND bl2.released_at > now_param
+                  )   
+                  AND bl.place_number = p.place_number
+                  AND bl.parking_id = p.parking_id
+                  AND bl.booked_at <= now_param
+                  AND bl.activated = true
+                  AND bl.released_at > now_param;
+              END;
+              $$ LANGUAGE plpgsql;

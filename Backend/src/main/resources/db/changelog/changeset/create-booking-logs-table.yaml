@@ -1,0 +1,57 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-booking-logs-table
+      author: SofiaPalkina
+      changes:
+        - createTable:
+            tableName: booking_logs
+            columns:
+              - column:
+                  name: id
+                  type: integer
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: parking_id
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: place_number
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: booked_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: released_at
+                  type: timestamp
+              - column:
+                  name: activated
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: booking_logs_parking_id_place_number_fkey
+            baseTableName: booking_logs
+            baseColumnNames: parking_id, place_number
+            referencedTableName: places
+            referencedColumnNames: parking_id, place_number
+            onDelete: cascade
+        - addForeignKeyConstraint:
+            constraintName: booking_logs_user_id_fkey
+            baseTableName: booking_logs
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: cascade

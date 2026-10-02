@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-release-expired-bookings-function
+      author: Pavel_Aleksandrov
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              CREATE OR REPLACE FUNCTION release_expired_bookings()
+              RETURNS void AS $$
+              BEGIN
+                UPDATE places
+                SET user_id = NULL, is_occupied = false, booking_time = NULL, parking_end_time = NUll
+                  WHERE parking_end_time <= NOW();
+              END;
+              $$ LANGUAGE plpgsql;

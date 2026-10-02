@@ -1,0 +1,49 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-places-table
+      author: SofiaPalkina
+      changes:
+        - createTable:
+            tableName: places
+            columns:
+              - column:
+                  name: place_number
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: parking_id
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: integer
+              - column:
+                  name: is_occupied
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: booking_time
+                  type: timestamp
+              - column:
+                  name: parking_end_time
+                  type: timestamp
+        - addPrimaryKey:
+            columnNames: place_number, parking_id
+            constraintName: pk_places
+            tableName: places
+        - addForeignKeyConstraint:
+            constraintName: places_parking_id_fkey
+            baseTableName: places
+            baseColumnNames: parking_id
+            referencedTableName: parkings
+            referencedColumnNames: id
+            onDelete: cascade
+        - addForeignKeyConstraint:
+            constraintName: places_user_id_fkey
+            baseTableName: places
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: set null

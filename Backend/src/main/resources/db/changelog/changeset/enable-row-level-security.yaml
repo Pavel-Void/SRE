@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: enable-row-level-security
+      author: SofiaPalkina
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+              ALTER TABLE parkings ENABLE ROW LEVEL SECURITY;
+              ALTER TABLE places ENABLE ROW LEVEL SECURITY;
+              ALTER TABLE booking_logs ENABLE ROW LEVEL SECURITY;

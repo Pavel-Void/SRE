@@ -1,0 +1,47 @@
+databaseChangeLog:
+  - changeSet:
+      id: insert-initial-data
+      author: system
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: 0
+            sql: SELECT COUNT(*) FROM parkings
+      changes:
+        - insert:
+            tableName: parkings
+            columns:
+              - column: { name: id, valueNumeric: 1 }
+              - column: { name: location, value: "Главный корпус (ПГНИУ, ул. Букирева, 15)" }
+              - column: { name: parking_average, valueNumeric: 5 }
+              - column: { name: parking_free, valueNumeric: 5 }
+        - insert:
+            tableName: places
+            columns:
+              - column: { name: place_number, valueNumeric: 1 }
+              - column: { name: parking_id, valueNumeric: 1 }
+              - column: { name: is_occupied, valueBoolean: false }
+        - insert:
+            tableName: places
+            columns:
+              - column: { name: place_number, valueNumeric: 2 }
+              - column: { name: parking_id, valueNumeric: 1 }
+              - column: { name: is_occupied, valueBoolean: false }
+        - insert:
+            tableName: places
+            columns:
+              - column: { name: place_number, valueNumeric: 3 }
+              - column: { name: parking_id, valueNumeric: 1 }
+              - column: { name: is_occupied, valueBoolean: false }
+        - insert:
+            tableName: places
+            columns:
+              - column: { name: place_number, valueNumeric: 4 }
+              - column: { name: parking_id, valueNumeric: 1 }
+              - column: { name: is_occupied, valueBoolean: false }
+        - insert:
+            tableName: places
+            columns:
+              - column: { name: place_number, valueNumeric: 5 }
+              - column: { name: parking_id, valueNumeric: 1 }
+              - column: { name: is_occupied, valueBoolean: false }

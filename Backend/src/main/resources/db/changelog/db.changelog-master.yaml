@@ -1,0 +1,23 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/changeset/create-users-table.yaml
+  - include:
+      file: db/changelog/changeset/create-parkings-table.yaml
+  - include:
+      file: db/changelog/changeset/create-places-table.yaml
+  - include:
+      file: db/changelog/changeset/create-booking-logs-table.yaml
+  - include:
+      file: db/changelog/changeset/enable-row-level-security.yaml
+  - include:
+      file: db/changelog/changeset/enable-row-level-security-to-logs.yaml
+  - include:
+      file: db/changelog/changeset/create-update-parking-average-trigger.yaml
+  - include:
+      file: db/changelog/changeset/create-update-parking-free-trigger.yaml
+  - include:
+      file: db/changelog/changeset/create-release-expired-bookings-function.yaml
+  - include:
+      file: db/changelog/changeset/create-activate-future-booking-function.yaml
+  - include:
+      file: db/changelog/changeset/insert-initial-data.yaml

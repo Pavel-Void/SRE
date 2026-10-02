@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: enable-row-level-security-to-logs
+      author: SofiaPalkina
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              ALTER TABLE databasechangelog ENABLE ROW LEVEL SECURITY;
+              ALTER TABLE databasechangeloglock ENABLE ROW LEVEL SECURITY;

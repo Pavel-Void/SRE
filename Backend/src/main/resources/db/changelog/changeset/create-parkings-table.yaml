@@ -1,0 +1,26 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-parkings-table
+      author: SofiaPalkina
+      changes:
+        - createTable:
+            tableName: parkings
+            columns:
+              - column:
+                  name: id
+                  type: integer
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: location
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: parking_average
+                  type: integer
+              - column:
+                  name: parking_free
+                  type: integer

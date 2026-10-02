@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-update-parking-average-trigger
+      author: Pavel_Aleksandrov
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              CREATE OR REPLACE FUNCTION update_parking_average()
+                RETURNS trigger AS $$
+                BEGIN
+                -- Обновление parking_average в таблице parkings на количество мест на парковке
+                  UPDATE parkings
+                  SET parking_average = (
+                    SELECT COUNT(*)
+                    FROM places
+                    WHERE places.parking_id = NEW.parking_id
+                  )
+                  WHERE parkings.id = NEW.parking_id;
+                  RETURN NEW;
+                END;
+              $$ LANGUAGE plpgsql;
+
+              CREATE TRIGGER update_parking_average_trigger
+              AFTER INSERT OR UPDATE OR DELETE ON places
+              FOR EACH ROW
+              EXECUTE FUNCTION update_parking_average();
