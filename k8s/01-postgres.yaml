@@ -48,6 +48,9 @@ spec:
           ports:
             - containerPort: 5432
               name: postgres
+          env:
+            - name: TZ
+              value: "Asia/Yekaterinburg"
           envFrom:
             - secretRef:
                 name: postgres-secret
