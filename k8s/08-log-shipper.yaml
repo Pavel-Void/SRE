@@ -1,0 +1,192 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-shipper-config
+  namespace: default
+data:
+  shipper.js: |
+    const fs = require('fs');
+    const path = require('path');
+    const http = require('http');
+
+    const VL_URL = process.env.VL_URL || 'http://victoria-logs.default.svc.cluster.local:9428/insert/jsonline?_stream_fields=namespace,container,service.name&_msg_field=message&_time_field=timestamp';
+    const LOG_DIR = '/var/log/pods';
+
+    const fileOffsets = new Map();
+
+    function sendLogs(batch) {
+      if (!batch || batch.length === 0) return;
+      const payload = batch.map(item => JSON.stringify(item)).join('\n') + '\n';
+      
+      const url = new URL(VL_URL);
+      const req = http.request({
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/stream+json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      }, (res) => {
+        res.resume();
+      });
+      req.on('error', (err) => console.error('Error sending logs:', err.message));
+      req.write(payload);
+      req.end();
+    }
+
+    function processLine(line, filePath) {
+      if (!line || !line.trim()) return null;
+      const parts = line.split(' ');
+      if (parts.length < 4) return null;
+      
+      const criTime = parts[0];
+      const stream = parts[1];
+      const payload = line.substring(criTime.length + 1 + stream.length + 1 + parts[2].length + 1);
+      
+      const segments = filePath.split(path.sep);
+      const container = segments[segments.length - 2] || 'unknown';
+      const podFolder = segments[segments.length - 3] || '';
+      const folderParts = podFolder.split('_');
+      const namespace = folderParts[0] || 'default';
+      const pod = folderParts[1] || container;
+
+      let record = {
+        timestamp: criTime,
+        stream: stream,
+        namespace: namespace,
+        pod: pod,
+        container: container,
+        'service.name': container === 'backend' ? 'park-backend' : (container === 'frontend' ? 'park-frontend' : container),
+        message: payload,
+        level: 'INFO'
+      };
+
+      try {
+        if (payload.startsWith('{') && payload.endsWith('}')) {
+          const parsed = JSON.parse(payload);
+          Object.assign(record, parsed);
+          
+          if (parsed.message) record.message = parsed.message;
+          if (parsed.level) record.level = String(parsed.level).toUpperCase();
+          else if (parsed['log.level']) record.level = String(parsed['log.level']).toUpperCase();
+          
+          if (parsed['service.name']) record['service.name'] = parsed['service.name'];
+          else if (parsed.service_name) record['service.name'] = parsed.service_name;
+
+          if (parsed['@timestamp']) record.timestamp = parsed['@timestamp'];
+          else if (parsed.timestamp) record.timestamp = parsed.timestamp;
+
+          if (parsed['log.logger']) record.logger = parsed['log.logger'];
+          else if (parsed.logger_name) record.logger = parsed.logger_name;
+
+          if (parsed['process.thread.name']) record.thread = parsed['process.thread.name'];
+          else if (parsed.thread_name) record.thread = parsed.thread_name;
+        }
+      } catch (e) {
+      }
+
+      return record;
+    }
+
+    function scanAndRead() {
+      function findLogFiles(dir) {
+        let results = [];
+        try {
+          const list = fs.readdirSync(dir);
+          for (const file of list) {
+            const fullPath = path.join(dir, file);
+            const stat = fs.statSync(fullPath);
+            if (stat.isDirectory()) {
+              results = results.concat(findLogFiles(fullPath));
+            } else if (file.endsWith('.log')) {
+              results.push(fullPath);
+            }
+          }
+        } catch (e) {}
+        return results;
+      }
+
+      const files = findLogFiles(LOG_DIR);
+      const batch = [];
+
+      for (const file of files) {
+        if (!file.includes('default_')) continue;
+        if (file.includes('shipper')) continue;
+
+        try {
+          const stat = fs.statSync(file);
+          const prevOffset = fileOffsets.get(file) || 0;
+          if (stat.size > prevOffset) {
+            const fd = fs.openSync(file, 'r');
+            const buffer = Buffer.alloc(stat.size - prevOffset);
+            fs.readSync(fd, buffer, 0, buffer.length, prevOffset);
+            fs.closeSync(fd);
+            fileOffsets.set(file, stat.size);
+
+            const lines = buffer.toString('utf8').split('\n');
+            for (const line of lines) {
+              const rec = processLine(line, file);
+              if (rec) batch.push(rec);
+            }
+          } else if (stat.size < prevOffset) {
+            fileOffsets.set(file, 0);
+          }
+        } catch (e) {}
+      }
+
+      if (batch.length > 0) {
+        sendLogs(batch);
+      }
+    }
+
+    console.log('Victoria Logs Log-Shipper started. Collecting logs from /var/log/pods...');
+    scanAndRead();
+    setInterval(scanAndRead, 2000);
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: log-shipper
+  namespace: default
+  labels:
+    app: log-shipper
+spec:
+  selector:
+    matchLabels:
+      app: log-shipper
+  template:
+    metadata:
+      labels:
+        app: log-shipper
+    spec:
+      containers:
+        - name: shipper
+          image: sre-frontend:latest
+          imagePullPolicy: IfNotPresent
+          command: ["node", "/app/shipper.js"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: config
+              mountPath: /app/shipper.js
+              subPath: shipper.js
+              readOnly: true
+            - name: var-log-pods
+              mountPath: /var/log/pods
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: log-shipper-config
+        - name: var-log-pods
+          hostPath:
+            path: /var/log/pods

@@ -22,7 +22,7 @@
     * Spring Security + JWT (библиотека JJWT 0.11.5) для аутентификации;
     * Миграции базы данных через Liquibase;
     * Spring Scheduling для периодических фоновых задач;
-    * Логирование — SLF4J + Logback (вывод напрямую в консоль/stdout).
+    * Логирование — нативное структурированное JSON-логирование Spring Boot 3.4 (ECS формат: `@timestamp`, `log.level`, `service.name`, `message`, `logger`, `thread`) в stdout контейнера.
 
 * **Фронтенд (`Frontend/`):**
     * Node.js 20, Next.js 15.2.4 (App Router) + React 19;
@@ -35,10 +35,17 @@
     * PostgreSQL 16 (запускается в контейнере `postgres:16-alpine`);
     * Триггеры и хранимые функции на PL/pgSQL для автоматического пересчета счетчиков свободных мест и поддержания целостности.
 
-* **Инфраструктура и контейнеризация:**
-    * Dockerfile для каждого сервиса с multi-stage сборкой;
-    * Корневой `docker-compose.yml` для поднятия всей связки одной командой;
-    * GitHub Actions (`.github/workflows/ci.yml`) для автоматической проверки компиляции и сборки контейнеров при пушах.
+* **Оркестрация и инфраструктура (Kubernetes / Minikube):**
+    * Декларативные манифесты Kubernetes в каталоге `k8s/` (`Deployment`, `Service`, `ConfigMap`, `Secret`, `PersistentVolumeClaim`, `DaemonSet`);
+    * Multi-stage Dockerfile для каждого сервиса;
+    * Корневой `docker-compose.yml` для альтернативного локального запуска;
+    * GitHub Actions (`.github/workflows/ci.yml`) для CI-проверок.
+
+* **Централизованное логирование и мониторинг:**
+    * **Victoria Logs (single-node):** высокопроизводительная СУБД для хранения и поиска логов с движком запросов LogsQL и встроенным веб-интерфейсом `vmui`;
+    * **Log Shipper (DaemonSet):** агент на уровне ноды кластера, выполняющий непрерывный сбор CRI-логов из `/var/log/pods`, парсинг JSON полезной нагрузки и стриминг в Victoria Logs по HTTP (`/insert/jsonline`);
+    * **Grafana (с официальным плагином Victoria Logs):** инструмент визуализации с предустановленным плагином `victoriametrics-logs-datasource` и настроенным datasource для анализа логов через Explore.
+
 
 ---
 
@@ -87,7 +94,29 @@
 
 ## 5. Инструкция по запуску проекта
 
-### Запуск всего стека через Docker Compose (основной способ)
+### Вариант 1: Запуск в Kubernetes (Minikube) с Victoria Logs и Grafana (Основной способ)
+
+1. **Запустить Minikube и применить манифесты:**
+   ```powershell
+   minikube start
+   kubectl apply -f k8s/all-in-one.yaml
+   ```
+   *(Или по отдельности: `kubectl apply -f k8s/`)*
+
+2. **Запустить проброс портов на хост-машину:**
+   ```powershell
+   .\start-port-forward.ps1
+   ```
+
+3. **Доступные сервисы и веб-интерфейсы:**
+   * **Пользовательский интерфейс (Frontend):** [http://localhost:3000](http://localhost:3000)
+   * **REST API бэкенда:** [http://localhost:8080/api/parkingList](http://localhost:8080/api/parkingList)
+   * **Веб-интерфейс Victoria Logs (vmui):** [http://localhost:9428/select/vmui/](http://localhost:9428/select/vmui/)
+   * **Grafana (с источником VictoriaLogs):** [http://localhost:3001](http://localhost:3001) *(логин: `admin`, пароль: `admin`)*
+
+---
+
+### Вариант 2: Запуск всего стека через Docker Compose
 
 1. Клонировать репозиторий и перейти в корень проекта:
 2. Запустить контейнеры с пересборкой:

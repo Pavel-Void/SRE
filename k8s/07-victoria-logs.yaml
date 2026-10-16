@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: victoria-logs-pvc
+  labels:
+    app: victoria-logs
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victoria-logs
+  labels:
+    app: victoria-logs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: victoria-logs
+  template:
+    metadata:
+      labels:
+        app: victoria-logs
+    spec:
+      containers:
+        - name: victoria-logs
+          image: victoriametrics/victoria-logs:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-storageDataPath=/victoria-logs-data"
+            - "-httpListenAddr=:9428"
+            - "-retentionPeriod=7d"
+          ports:
+            - name: http
+              containerPort: 9428
+          volumeMounts:
+            - name: victoria-logs-data
+              mountPath: /victoria-logs-data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9428
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9428
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+      volumes:
+        - name: victoria-logs-data
+          persistentVolumeClaim:
+            claimName: victoria-logs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: victoria-logs
+  labels:
+    app: victoria-logs
+spec:
+  type: ClusterIP
+  selector:
+    app: victoria-logs
+  ports:
+    - name: http
+      port: 9428
+      targetPort: 9428
