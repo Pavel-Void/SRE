@@ -4,15 +4,33 @@ metadata:
   name: log-shipper-config
   namespace: default
 data:
+  VL_URL: "http://victoria-logs.default.svc.cluster.local:9428/insert/jsonline?_stream_fields=namespace,container,service.name&_msg_field=message&_time_field=timestamp"
+  LOG_DIR: "/var/log/pods"
+  POLL_INTERVAL_MS: "2000"
+  NAMESPACE_FILTER: "default"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-shipper-bin
+  namespace: default
+data:
   shipper.js: |
     const fs = require('fs');
     const path = require('path');
     const http = require('http');
 
-    const VL_URL = process.env.VL_URL || 'http://victoria-logs.default.svc.cluster.local:9428/insert/jsonline?_stream_fields=namespace,container,service.name&_msg_field=message&_time_field=timestamp';
-    const LOG_DIR = '/var/log/pods';
+    const VL_URL = process.env.VL_URL;
+    const LOG_DIR = process.env.LOG_DIR;
+    const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '2000', 10);
+    const NAMESPACE_FILTER = process.env.NAMESPACE_FILTER || 'default';
 
-    const fileOffsets = new Map();
+    if (!VL_URL || !LOG_DIR) {
+      console.error('Fatal configuration error: VL_URL and LOG_DIR environment variables must be defined.');
+      process.exit(1);
+    }
+
+    const fileStates = new Map();
 
     function sendLogs(batch) {
       if (!batch || batch.length === 0) return;
@@ -31,20 +49,36 @@ data:
       }, (res) => {
         res.resume();
       });
-      req.on('error', (err) => console.error('Error sending logs:', err.message));
+      req.on('error', (err) => console.error('Error sending logs to VictoriaLogs:', err.message));
       req.write(payload);
       req.end();
     }
 
-    function processLine(line, filePath) {
-      if (!line || !line.trim()) return null;
-      const parts = line.split(' ');
+    function isStackTraceLine(line) {
+      if (!line) return false;
+      const trimmed = line.trim();
+      if (trimmed.startsWith('at ') || trimmed.startsWith('Caused by:') || trimmed.startsWith('Suppressed:')) return true;
+      if (/^\.\.\.\s+\d+\s+more/.test(trimmed)) return true;
+      if (/^[a-zA-Z0-9_$.]+(Exception|Error):/.test(trimmed)) return true;
+      if (line.startsWith('\t') || line.startsWith('   ')) return true;
+      return false;
+    }
+
+    function parseCriLine(rawLine) {
+      if (!rawLine || !rawLine.trim()) return null;
+      const parts = rawLine.split(' ');
       if (parts.length < 4) return null;
       
       const criTime = parts[0];
-      const stream = parts[1];
-      const payload = line.substring(criTime.length + 1 + stream.length + 1 + parts[2].length + 1);
+      const stream = parts[1]; // stdout | stderr
+      const tag = parts[2];    // F (full) | P (partial)
+      const headerLen = criTime.length + 1 + stream.length + 1 + tag.length + 1;
+      const payload = rawLine.substring(headerLen);
       
+      return { criTime, stream, tag, payload };
+    }
+
+    function createRecord(criTime, stream, payload, filePath) {
       const segments = filePath.split(path.sep);
       const container = segments[segments.length - 2] || 'unknown';
       const podFolder = segments[segments.length - 3] || '';
@@ -60,12 +94,13 @@ data:
         container: container,
         'service.name': container === 'backend' ? 'park-backend' : (container === 'frontend' ? 'park-frontend' : container),
         message: payload,
-        level: 'INFO'
+        level: stream === 'stderr' ? 'ERROR' : 'INFO'
       };
 
-      try {
-        if (payload.startsWith('{') && payload.endsWith('}')) {
-          const parsed = JSON.parse(payload);
+      const trimmed = payload.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(trimmed);
           Object.assign(record, parsed);
           
           if (parsed.message) record.message = parsed.message;
@@ -83,8 +118,18 @@ data:
 
           if (parsed['process.thread.name']) record.thread = parsed['process.thread.name'];
           else if (parsed.thread_name) record.thread = parsed.thread_name;
+
+          if (parsed['error.stack_trace']) record['error.stack_trace'] = parsed['error.stack_trace'];
+        } catch (e) {
+          // Keep raw fallback
         }
-      } catch (e) {
+      } else {
+        // Non-JSON heuristics
+        if (/ERROR|Exception|Error:/i.test(payload) || stream === 'stderr') {
+          record.level = 'ERROR';
+        } else if (/WARN|Warning:/i.test(payload)) {
+          record.level = 'WARN';
+        }
       }
 
       return record;
@@ -112,28 +157,75 @@ data:
       const batch = [];
 
       for (const file of files) {
-        if (!file.includes('default_')) continue;
+        if (!file.includes(NAMESPACE_FILTER + '_')) continue;
         if (file.includes('shipper')) continue;
 
         try {
           const stat = fs.statSync(file);
-          const prevOffset = fileOffsets.get(file) || 0;
-          if (stat.size > prevOffset) {
-            const fd = fs.openSync(file, 'r');
-            const buffer = Buffer.alloc(stat.size - prevOffset);
-            fs.readSync(fd, buffer, 0, buffer.length, prevOffset);
-            fs.closeSync(fd);
-            fileOffsets.set(file, stat.size);
-
-            const lines = buffer.toString('utf8').split('\n');
-            for (const line of lines) {
-              const rec = processLine(line, file);
-              if (rec) batch.push(rec);
-            }
-          } else if (stat.size < prevOffset) {
-            fileOffsets.set(file, 0);
+          let state = fileStates.get(file);
+          if (!state) {
+            state = { offset: 0, partialBuffer: '', activeRecord: null };
+            fileStates.set(file, state);
           }
-        } catch (e) {}
+
+          if (stat.size < state.offset) {
+            state.offset = 0;
+            state.partialBuffer = '';
+            state.activeRecord = null;
+          }
+
+          if (stat.size > state.offset) {
+            const fd = fs.openSync(file, 'r');
+            const buffer = Buffer.alloc(stat.size - state.offset);
+            fs.readSync(fd, buffer, 0, buffer.length, state.offset);
+            fs.closeSync(fd);
+            state.offset = stat.size;
+
+            const rawLines = buffer.toString('utf8').split('\n');
+            for (const rawLine of rawLines) {
+              if (!rawLine) continue;
+              const parsedCri = parseCriLine(rawLine);
+              if (!parsedCri) continue;
+
+              // CRI Partial line assembly
+              if (parsedCri.tag === 'P') {
+                state.partialBuffer += parsedCri.payload;
+                continue;
+              }
+
+              let fullPayload = state.partialBuffer + parsedCri.payload;
+              state.partialBuffer = '';
+
+              // Check if this line is a continuation of a multiline stack trace
+              if (isStackTraceLine(fullPayload) && state.activeRecord) {
+                state.activeRecord.message += '\n' + fullPayload;
+                if (!state.activeRecord['error.stack_trace']) {
+                  state.activeRecord['error.stack_trace'] = fullPayload;
+                } else {
+                  state.activeRecord['error.stack_trace'] += '\n' + fullPayload;
+                }
+                state.activeRecord.level = 'ERROR';
+                continue;
+              }
+
+              // New distinct log entry
+              if (state.activeRecord) {
+                batch.push(state.activeRecord);
+                state.activeRecord = null;
+              }
+
+              state.activeRecord = createRecord(parsedCri.criTime, parsedCri.stream, fullPayload, file);
+            }
+
+            // Flush active record if any
+            if (state.activeRecord) {
+              batch.push(state.activeRecord);
+              state.activeRecord = null;
+            }
+          }
+        } catch (e) {
+          console.error(`Error processing file ${file}:`, e.message);
+        }
       }
 
       if (batch.length > 0) {
@@ -141,9 +233,9 @@ data:
       }
     }
 
-    console.log('Victoria Logs Log-Shipper started. Collecting logs from /var/log/pods...');
+    console.log(`Victoria Logs Log-Shipper started. Target: ${VL_URL}, Dir: ${LOG_DIR}`);
     scanAndRead();
-    setInterval(scanAndRead, 2000);
+    setInterval(scanAndRead, POLL_INTERVAL_MS);
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -168,8 +260,11 @@ spec:
           command: ["node", "/app/shipper.js"]
           securityContext:
             runAsUser: 0
+          envFrom:
+            - configMapRef:
+                name: log-shipper-config
           volumeMounts:
-            - name: config
+            - name: code
               mountPath: /app/shipper.js
               subPath: shipper.js
               readOnly: true
@@ -184,9 +279,9 @@ spec:
               cpu: 250m
               memory: 256Mi
       volumes:
-        - name: config
+        - name: code
           configMap:
-            name: log-shipper-config
+            name: log-shipper-bin
         - name: var-log-pods
           hostPath:
             path: /var/log/pods
