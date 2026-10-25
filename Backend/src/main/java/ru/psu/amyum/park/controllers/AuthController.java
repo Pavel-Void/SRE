@@ -8,6 +8,7 @@ import ru.psu.amyum.park.dto.JwtAuthenticationDto;
 import ru.psu.amyum.park.dto.RefreshTokenDto;
 import ru.psu.amyum.park.dto.UserCredentialsDto;
 import ru.psu.amyum.park.dto.UserDto;
+import ru.psu.amyum.park.metrics.ParkMetricsService;
 import ru.psu.amyum.park.service.UserService;
 
 import javax.naming.AuthenticationException;
@@ -19,13 +20,16 @@ public class AuthController {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AuthController.class);
 
     private final UserService userService;
+    private final ParkMetricsService parkMetricsService;
 
     @PostMapping("/login")
     public ResponseEntity<JwtAuthenticationDto> login(@RequestBody UserCredentialsDto userCredentialsDto) {
         try {
             JwtAuthenticationDto jwtAuthenticationDto = userService.singIn(userCredentialsDto);
+            parkMetricsService.recordAuth("login", "success");
             return ResponseEntity.ok(jwtAuthenticationDto);
         } catch (AuthenticationException e) {
+            parkMetricsService.recordAuth("login", "failed");
             return ResponseEntity.status(401).body(null);
         }
     }
@@ -35,9 +39,11 @@ public class AuthController {
         try {
             userService.register(userDto);
             JwtAuthenticationDto jwtAuthenticationDto = userService.singIn(new UserCredentialsDto(userDto.getEmail(), userDto.getPassword()));
+            parkMetricsService.recordAuth("register", "success");
             return ResponseEntity.ok(jwtAuthenticationDto);
         } catch (Exception e) {
             log.error("Registration error: ", e);
+            parkMetricsService.recordAuth("register", "failed");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }

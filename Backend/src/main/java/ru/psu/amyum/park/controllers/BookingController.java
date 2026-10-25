@@ -4,6 +4,7 @@ import org.springframework.data.crossstore.ChangeSetPersister;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import ru.psu.amyum.park.metrics.ParkMetricsService;
 import ru.psu.amyum.park.dto.BookingRequest;
 import ru.psu.amyum.park.dto.CancelSpotRequest;
 import ru.psu.amyum.park.service.BookingService;
@@ -14,7 +15,6 @@ import ru.psu.amyum.park.dto.BookingResponse;
 import ru.psu.amyum.park.model.BookingLog;
 import ru.psu.amyum.park.dto.BookedSpot;
 
-import java.time.Instant;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -28,10 +28,12 @@ import java.util.List;
 public class BookingController {
     private final BookingService bookingService;
     private final UserService userService;
+    private final ParkMetricsService parkMetricsService;
 
-    public BookingController(BookingService bookingService, UserService userService) {
+    public BookingController(BookingService bookingService, UserService userService, ParkMetricsService parkMetricsService) {
         this.bookingService = bookingService;
         this.userService = userService;
+        this.parkMetricsService = parkMetricsService;
     }
 
     @PostMapping("/booking")
@@ -48,7 +50,16 @@ public class BookingController {
         String email = authentication.getName();
         int userId = userService.getUserByEmail(email).getId();
 
-        bookingService.bookPlace(placeId, parkingId, userId, bookingTime, parkingTime);
+        long startNanos = System.nanoTime();
+        try {
+            bookingService.bookPlace(placeId, parkingId, userId, bookingTime, parkingTime);
+            parkMetricsService.recordBooking(parkingId, true);
+            parkMetricsService.recordBookingDuration(System.nanoTime() - startNanos, true);
+        } catch (Exception e) {
+            parkMetricsService.recordBooking(parkingId, false);
+            parkMetricsService.recordBookingDuration(System.nanoTime() - startNanos, false);
+            throw e;
+        }
 
         BookingResponse response = new BookingResponse(
                 placeId,
@@ -67,7 +78,7 @@ public class BookingController {
         List<BookingLog> bookings = bookingService.getBookingsByPlaceAndParking(placeId, parkingId);
 
         List<BookedSpot> bookedSpots = bookings.stream()
-                .filter(booking -> booking.getReleasedAt().after(Timestamp.from(Instant.now())))
+                .filter(booking -> booking.getReleasedAt().after(Timestamp.valueOf(LocalDateTime.now())))
                 .map(booking -> new BookedSpot(
                         booking.getBookedAt(),
                         booking.getReleasedAt()
@@ -85,10 +96,10 @@ public class BookingController {
                     request.getSpotId(),
                     request.getStartTime()
             );
-            return ResponseEntity.ok().build();
+            parkMetricsService.recordCancellation(request.getParkingId(), "user_cancel");
+            return ResponseEntity.ok(Map.of("message", "Booking cancelled successfully"));
         } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", "Бронь не найдена или уже отменена"));
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 }

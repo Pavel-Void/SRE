@@ -40,16 +40,25 @@ spec:
     metadata:
       labels:
         app: postgres
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: postgres
           image: postgres:16-alpine
           imagePullPolicy: IfNotPresent
+          args:
+            - "-c"
+            - "timezone=Asia/Yekaterinburg"
           ports:
             - containerPort: 5432
               name: postgres
           env:
             - name: TZ
+              value: "Asia/Yekaterinburg"
+            - name: PGTZ
               value: "Asia/Yekaterinburg"
           envFrom:
             - secretRef:
@@ -86,6 +95,48 @@ spec:
             timeoutSeconds: 3
             successThreshold: 1
             failureThreshold: 3
+
+        # Sidecar container for exporting PostgreSQL metrics
+        - name: postgres-exporter
+          image: prometheuscommunity/postgres-exporter:v0.16.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9187
+              name: metrics
+          env:
+            - name: DATA_SOURCE_URI
+              value: "localhost:5432/park_psu?sslmode=disable"
+            - name: DATA_SOURCE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: DATA_SOURCE_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 9187
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9187
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
       volumes:
         - name: postgres-storage
           persistentVolumeClaim:

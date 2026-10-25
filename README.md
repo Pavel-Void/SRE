@@ -22,7 +22,8 @@
     * Spring Security + JWT (библиотека JJWT 0.11.5) для аутентификации;
     * Миграции базы данных через Liquibase;
     * Spring Scheduling для периодических фоновых задач;
-    * Логирование — нативное структурированное JSON-логирование Spring Boot 3.4 (ECS формат: `@timestamp`, `log.level`, `service.name`, `message`, `logger`, `thread`) в stdout контейнера.
+    * Логирование — нативное структурированное JSON-логирование Spring Boot 3.4 (ECS формат: `@timestamp`, `log.level`, `service.name`, `message`, `logger`, `thread`) в stdout контейнера;
+    * Метрики — Spring Boot Actuator и Micrometer Prometheus registry (`/actuator/prometheus`) для сбора метрик рантайма (JVM, HikariCP, HTTP) и кастомных бизнес-метрик приложения (`MeterRegistry`).
 
 * **Фронтенд (`Frontend/`):**
     * Node.js 20, Next.js 15.2.4 (App Router) + React 19;
@@ -33,19 +34,27 @@
 
 * **База данных:**
     * PostgreSQL 16 (запускается в контейнере `postgres:16-alpine`);
-    * Триггеры и хранимые функции на PL/pgSQL для автоматического пересчета счетчиков свободных мест и поддержания целостности.
+    * Триггеры и хранимые функции на PL/pgSQL для автоматического пересчета счетчиков свободных мест и поддержания целостности;
+    * Сайдкар экспортер метрик: `postgres-exporter:v0.16.0` (порт 9187, OpenMetrics) для сбора метрик СУБД.
 
 * **Оркестрация и инфраструктура (Kubernetes / Minikube):**
     * Декларативные манифесты Kubernetes в каталоге `k8s/` (`Deployment`, `Service`, `ConfigMap`, `Secret`, `PersistentVolumeClaim`, `DaemonSet`);
+    * Пакетный менеджер Helm v3 для управления релизами мониторинга VictoriaMetrics;
     * Multi-stage Dockerfile для каждого сервиса;
     * Корневой `docker-compose.yml` для альтернативного локального запуска;
     * GitHub Actions (`.github/workflows/ci.yml`) для CI-проверок.
 
-* **Централизованное логирование и мониторинг:**
-    * **Victoria Logs (single-node):** высокопроизводительная СУБД для хранения и поиска логов с движком запросов LogsQL и встроенным веб-интерфейсом `vmui`;
-    * **Log Shipper (DaemonSet):** агент на уровне ноды кластера, выполняющий непрерывный сбор CRI-логов из `/var/log/pods`, парсинг JSON полезной нагрузки и стриминг в Victoria Logs по HTTP (`/insert/jsonline`);
-    * **Grafana (с официальным плагином Victoria Logs):** инструмент визуализации с предустановленным плагином `victoriametrics-logs-datasource` и настроенным datasource для анализа логов через Explore.
+* **Централизованный мониторинг и сбор метрик (VictoriaMetrics Stack):**
+    * **VictoriaMetrics Single Server:** высокопроизводительная TSDB для долгосрочного хранения временных рядов с поддержкой PromQL/MetricsQL API (порт `8428`);
+    * **VictoriaMetrics Agent (`vmagent`):** легковесный агент для сбора метрик с подов кластера через автоматический Kubernetes Service Discovery по аннотациям `prometheus.io/scrape: "true"` (порт `8429`);
+    * **Экспорт метрик рантайма и бизнес-метрик:** Spring Boot Actuator Prometheus эндпоинт (`/actuator/prometheus`, порт `8080`);
+    * **Экспорт метрик PostgreSQL:** `postgres-exporter` sidecar (порт `9187`, эндпоинт `/metrics`);
+    * **Кастомные бизнес-метрики:** счетчики бронирований (`parking_bookings_total`), отмен (`parking_booking_cancellations_total`), состояние свободных мест (`parking_spots_status`), попытки авторизации (`parking_auth_attempts_total`) и таймер длительности создания брони (`parking_booking_duration_seconds`).
 
+* **Централизованное логирование:**
+    * **Victoria Logs (single-node):** высокопроизводительная СУБД для хранения и поиска логов с движком запросов LogsQL и встроенным веб-интерфейсом `vmui` (порт `9428`);
+    * **Log Shipper (DaemonSet):** агент на уровне ноды кластера, выполняющий непрерывный сбор CRI-логов из `/var/log/pods`, парсинг JSON полезной нагрузки и стриминг в Victoria Logs по HTTP (`/insert/jsonline`);
+    * **Grafana:** инструмент визуализации с настроенными источниками данных для анализа логов и метрик (порт `3001`).
 
 ---
 
@@ -94,31 +103,56 @@
 
 ## 5. Инструкция по запуску проекта
 
-### Вариант 1: Запуск в Kubernetes (Minikube) с Victoria Logs и Grafana (Основной способ)
+### Вариант 1: Запуск в Kubernetes (Minikube) с мониторингом VictoriaMetrics и Victoria Logs (Основной способ)
 
-1. **Запустить Minikube и применить манифесты:**
+1. **Запустить Minikube:**
    ```powershell
    minikube start
+   ```
+
+2. **Развернуть TSDB VictoriaMetrics и сборщик vmagent через Helm:**
+   ```powershell
+   # Добавить репозиторий VictoriaMetrics
+   helm repo add vm https://victoriametrics.github.io/helm-charts/
+   helm repo update
+
+   # Создать пространство имён monitoring
+   kubectl create namespace monitoring
+
+   # Установить VictoriaMetrics Single Server (хранилище метрик)
+   helm install vm-single vm/victoria-metrics-single -n monitoring -f k8s/monitoring/vmsingle-values.yaml
+
+   # Установить VictoriaMetrics Agent (сборщик метрик vmagent с Service Discovery)
+   helm install vmagent vm/victoria-metrics-agent -n monitoring -f k8s/monitoring/vmagent-values.yaml
+   ```
+   *(Также доступны статические манифесты: `kubectl apply -f k8s/monitoring/`)*
+
+3. **Развернуть сервисы приложения (PostgreSQL, Backend, Frontend, VictoriaLogs, Grafana):**
+   ```powershell
    kubectl apply -f k8s/all-in-one.yaml
    ```
    *(Или по отдельности: `kubectl apply -f k8s/`)*
 
-2. **Запустить проброс портов на хост-машину:**
+4. **Запустить проброс портов на хост-машину:**
    ```powershell
    .\start-port-forward.ps1
    ```
 
-3. **Доступные сервисы и веб-интерфейсы:**
+5. **Доступные сервисы и веб-интерфейсы:**
    * **Пользовательский интерфейс (Frontend):** [http://localhost:3000](http://localhost:3000)
    * **REST API бэкенда:** [http://localhost:8080/api/parkingList](http://localhost:8080/api/parkingList)
+   * **VictoriaMetrics Single Server (TSDB & PromQL API):** [http://localhost:8428](http://localhost:8428)
+   * **vmagent Web UI / Metrics:** [http://localhost:8429/metrics](http://localhost:8429/metrics)
+   * **PostgreSQL Exporter (metrics):** [http://localhost:9187/metrics](http://localhost:9187/metrics)
+   * **Spring Boot Actuator (Prometheus):** [http://localhost:8080/actuator/prometheus](http://localhost:8080/actuator/prometheus)
    * **Веб-интерфейс Victoria Logs (vmui):** [http://localhost:9428/select/vmui/](http://localhost:9428/select/vmui/)
-   * **Grafana (с источником VictoriaLogs):** [http://localhost:3001](http://localhost:3001) *(логин: `admin`, пароль: `admin`)*
+   * **Grafana:** [http://localhost:3001](http://localhost:3001) *(логин: `admin`, пароль: `admin`)*
 
 ---
 
 ### Вариант 2: Запуск всего стека через Docker Compose
 
-1. Клонировать репозиторий и перейти в корень проекта:
+1. Клонировать репозиторий и перейти в корень проекта.
 2. Запустить контейнеры с пересборкой:
    ```bash
    docker compose up --build
@@ -126,9 +160,9 @@
    *(Если база запускалась ранее и хочется создать её заново с нуля, предварительно выполнить `docker compose down -v`)*.
 
 3. После запуска сервисы доступны по адресам:
-    * **Веб-интерфейс (Frontend):** [http://localhost:3000](http://localhost:3000)
-    * **API бэкенда:** [http://localhost:8080/api/parkingList](http://localhost:8080/api/parkingList)
-    * **База данных PostgreSQL:** `localhost:5432` (`db: park_psu`, `user: postgres`, `password: postgres`)
+   * **Веб-интерфейс (Frontend):** [http://localhost:3000](http://localhost:3000)
+   * **API бэкенда:** [http://localhost:8080/api/parkingList](http://localhost:8080/api/parkingList)
+   * **База данных PostgreSQL:** `localhost:5432` (`db: park_psu`, `user: postgres`, `password: postgres`)
 
 ### Ручной локальный запуск для разработки
 

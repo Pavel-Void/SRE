@@ -42,7 +42,9 @@ public class BookingService {
             throw new RuntimeException("Место занято в указанный период");
         }
 
-        if (bookingTime.after(Timestamp.valueOf(LocalDateTime.now()))) {
+        LocalDateTime now = LocalDateTime.now();
+        // Если бронирование начинается в будущем (более чем через 1 минуту от текущего момента)
+        if (bookingTime.toLocalDateTime().isAfter(now.plusMinutes(1))) {
             bookingLogRepository.save(createBookingLog(userId, parkingId, placeNumber, bookingTime, parkingEndTime, false));
             return;
         }
@@ -51,7 +53,7 @@ public class BookingService {
                 .orElseThrow(() -> new RuntimeException("Место не найдено"));
 
 
-        if(place.getParkingEndTime() == null || bookingTime.after(place.getParkingEndTime()) || bookingTime.equals(place.getParkingEndTime())) {
+        if(place.getParkingEndTime() == null || !place.isOccupied() || bookingTime.after(place.getParkingEndTime()) || bookingTime.equals(place.getParkingEndTime())) {
             place.setIsOccupied(true);
             place.setBookingTime(bookingTime);
             place.setUserId(userId);

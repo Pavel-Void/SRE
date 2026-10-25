@@ -1,6 +1,3 @@
-# ========================================================
-# 1. DATABASE (PostgreSQL 16)
-# ========================================================
 apiVersion: v1
 kind: Secret
 metadata:
@@ -43,16 +40,25 @@ spec:
     metadata:
       labels:
         app: postgres
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: postgres
           image: postgres:16-alpine
           imagePullPolicy: IfNotPresent
+          args:
+            - "-c"
+            - "timezone=Asia/Yekaterinburg"
           ports:
             - containerPort: 5432
               name: postgres
           env:
             - name: TZ
+              value: "Asia/Yekaterinburg"
+            - name: PGTZ
               value: "Asia/Yekaterinburg"
           envFrom:
             - secretRef:
@@ -89,6 +95,48 @@ spec:
             timeoutSeconds: 3
             successThreshold: 1
             failureThreshold: 3
+
+        # Sidecar container for exporting PostgreSQL metrics
+        - name: postgres-exporter
+          image: prometheuscommunity/postgres-exporter:v0.16.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9187
+              name: metrics
+          env:
+            - name: DATA_SOURCE_URI
+              value: "localhost:5432/park_psu?sslmode=disable"
+            - name: DATA_SOURCE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: DATA_SOURCE_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 9187
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9187
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
       volumes:
         - name: postgres-storage
           persistentVolumeClaim:
@@ -108,10 +156,10 @@ spec:
     - port: 5432
       targetPort: 5432
       name: postgres
+    - port: 9187
+      targetPort: 9187
+      name: metrics
 ---
-# ========================================================
-# 2. BACKEND (Spring Boot 3.4.3)
-# ========================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -121,12 +169,12 @@ metadata:
 data:
   PORT: "8080"
   TZ: "Asia/Yekaterinburg"
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/park_psu"
-  SPRING_DATASOURCE_USERNAME: "postgres"
-  CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080,http://localhost:30000"
+  JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Yekaterinburg"
+  CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:30000,http://localhost:8080,http://localhost:30080"
   SCHEDULING_ENABLED: "true"
-  LOGGING_STRUCTURED_FORMAT_CONSOLE: "ecs"
-
+  SHOW_SQL: "false"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED: "true"
 ---
 apiVersion: v1
 kind: Secret
@@ -136,6 +184,8 @@ metadata:
     app: backend
 type: Opaque
 stringData:
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/park_psu"
+  SPRING_DATASOURCE_USERNAME: "postgres"
   SPRING_DATASOURCE_PASSWORD: "postgres"
   JWT_SECRET: "itkICswj9AWlYWLK6GEmcEsFDVkRemVHcAliKSEAXgw="
 ---
@@ -146,7 +196,7 @@ metadata:
   labels:
     app: backend
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: backend
@@ -154,6 +204,10 @@ spec:
     metadata:
       labels:
         app: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
     spec:
       containers:
         - name: backend
@@ -175,7 +229,8 @@ spec:
               cpu: 1000m
               memory: 768Mi
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /actuator/health
               port: 8080
             initialDelaySeconds: 20
             periodSeconds: 10
@@ -183,7 +238,8 @@ spec:
             successThreshold: 1
             failureThreshold: 3
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /actuator/health
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 15
@@ -207,9 +263,6 @@ spec:
       nodePort: 30080
       name: http
 ---
-# ========================================================
-# 3. FRONTEND (Next.js 15)
-# ========================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -218,6 +271,7 @@ metadata:
     app: frontend
 data:
   PORT: "3000"
+  TZ: "Asia/Yekaterinburg"
   NEXT_PUBLIC_API_URL: "http://localhost:8080"
 ---
 apiVersion: apps/v1
@@ -288,9 +342,6 @@ spec:
       nodePort: 30000
       name: http
 ---
-# ========================================================
-# 4. VICTORIA LOGS (Single-Node)
-# ========================================================
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -379,9 +430,6 @@ spec:
       port: 9428
       targetPort: 9428
 ---
-# ========================================================
-# 5. LOG SHIPPER (DaemonSet)
-# ========================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -670,9 +718,6 @@ spec:
           hostPath:
             path: /var/log/pods
 ---
-# ========================================================
-# 6. GRAFANA WITH VICTORIALOGS PLUGIN (Bonus)
-# ========================================================
 apiVersion: v1
 kind: Secret
 metadata:
@@ -768,4 +813,3 @@ spec:
     - name: http
       port: 3000
       targetPort: 3000
-

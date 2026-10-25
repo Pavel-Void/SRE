@@ -37,6 +37,7 @@ public class SecurityConfig {
 
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/api/register", "/api/login", "/api/refresh").permitAll()
                         .requestMatchers("/api/**").authenticated())
                 .sessionManagement(session -> session

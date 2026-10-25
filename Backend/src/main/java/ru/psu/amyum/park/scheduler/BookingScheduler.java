@@ -10,7 +10,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.psu.amyum.park.repository.PlaceRepository;
 
 import java.sql.Timestamp;
-import java.time.Instant;
 import java.time.LocalDateTime;
 
 /**
@@ -35,7 +34,7 @@ public class BookingScheduler {
     @Transactional
     public void releaseExpiredPlaces() {
         log.debug("Running scheduled task: releaseExpiredPlaces");
-        Timestamp now = Timestamp.from(Instant.now());
+        Timestamp now = Timestamp.valueOf(LocalDateTime.now());
         placeRepository.releaseExpiredPlaces(now);
     }
 
