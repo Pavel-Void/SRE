@@ -1,0 +1,205 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prober-script
+  namespace: default
+  labels:
+    app: prober
+data:
+  prober.js: |
+    const http = require('http');
+
+    let totalProbes = 0;
+    let successfulProbes = 0;
+    let failedProbes = 0;
+    let lastProbeSuccess = 1;
+    let lastProbeDurationSeconds = 0;
+    let lastProbeStatusCode = 200;
+
+    const BACKEND_HOST = process.env.TARGET_HOST || 'backend.default.svc.cluster.local';
+    const BACKEND_PORT = parseInt(process.env.TARGET_PORT || '8080', 10);
+    const PROBE_INTERVAL_MS = parseInt(process.env.PROBE_INTERVAL_MS || '2000', 10);
+    const METRICS_PORT = parseInt(process.env.METRICS_PORT || '9090', 10);
+
+    // Dynamic endpoint target: can be changed via HTTP POST to /simulate-failure
+    let targetPath = process.env.TARGET_PATH || '/actuator/health';
+    let forceFailure = false;
+
+    function probeEndpoint() {
+      if (forceFailure) {
+        totalProbes++;
+        failedProbes++;
+        lastProbeSuccess = 0;
+        lastProbeStatusCode = 503;
+        lastProbeDurationSeconds = 0.5;
+        return;
+      }
+
+      const start = process.hrtime();
+      const req = http.request({
+        hostname: BACKEND_HOST,
+        port: BACKEND_PORT,
+        path: targetPath,
+        method: 'GET',
+        timeout: 3000
+      }, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          const diff = process.hrtime(start);
+          const durationSec = diff[0] + diff[1] / 1e9;
+          totalProbes++;
+          lastProbeDurationSeconds = durationSec;
+          lastProbeStatusCode = res.statusCode;
+
+          if (res.statusCode >= 200 && res.statusCode < 400) {
+            successfulProbes++;
+            lastProbeSuccess = 1;
+          } else {
+            failedProbes++;
+            lastProbeSuccess = 0;
+          }
+        });
+      });
+
+      req.on('error', () => {
+        const diff = process.hrtime(start);
+        totalProbes++;
+        failedProbes++;
+        lastProbeSuccess = 0;
+        lastProbeStatusCode = 503;
+        lastProbeDurationSeconds = diff[0] + diff[1] / 1e9;
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+      });
+
+      req.end();
+    }
+
+    setInterval(probeEndpoint, PROBE_INTERVAL_MS);
+    probeEndpoint();
+
+    const server = http.createServer((req, res) => {
+      // Endpoint to inject failure into prober
+      if (req.url === '/fail') {
+        forceFailure = true;
+        res.writeHead(200);
+        return res.end('Prober failure mode ACTIVATED\n');
+      }
+      if (req.url === '/recover') {
+        forceFailure = false;
+        res.writeHead(200);
+        return res.end('Prober failure mode DEACTIVATED\n');
+      }
+
+      if (req.url === '/metrics' || req.url === '/') {
+        const responseText = [
+          '# HELP app_prober_probe_success Binary indicator if last probe succeeded (1) or failed (0)',
+          '# TYPE app_prober_probe_success gauge',
+          `app_prober_probe_success{target="health"} ${lastProbeSuccess}`,
+          '',
+          '# HELP app_prober_probe_duration_seconds Latency of the last probe in seconds',
+          '# TYPE app_prober_probe_duration_seconds gauge',
+          `app_prober_probe_duration_seconds{target="health"} ${lastProbeDurationSeconds.toFixed(6)}`,
+          '',
+          '# HELP app_prober_probes_total Total number of probes sent by prober',
+          '# TYPE app_prober_probes_total counter',
+          `app_prober_probes_total{target="health",status="success"} ${successfulProbes}`,
+          `app_prober_probes_total{target="health",status="failure"} ${failedProbes}`,
+          '',
+          '# HELP app_prober_last_status_code HTTP status code of last probe',
+          '# TYPE app_prober_last_status_code gauge',
+          `app_prober_last_status_code{target="health"} ${lastProbeStatusCode}`,
+          ''
+        ].join('\n');
+
+        res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
+        res.end(responseText);
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    server.listen(METRICS_PORT, '0.0.0.0', () => {
+      console.log(`Prober running on :${METRICS_PORT}`);
+    });
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prober-deployment
+  namespace: default
+  labels:
+    app: prober
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prober
+  template:
+    metadata:
+      labels:
+        app: prober
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: prober
+          image: node:20-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["node", "/app/prober.js"]
+          env:
+            - name: TARGET_HOST
+              value: "backend.default.svc.cluster.local"
+            - name: TARGET_PORT
+              value: "8080"
+            - name: TARGET_PATH
+              value: "/actuator/health"
+            - name: PROBE_INTERVAL_MS
+              value: "2000"
+            - name: METRICS_PORT
+              value: "9090"
+          ports:
+            - name: metrics
+              containerPort: 9090
+          volumeMounts:
+            - name: prober-code
+              mountPath: /app
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9090
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: prober-code
+          configMap:
+            name: prober-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prober
+  namespace: default
+  labels:
+    app: prober
+spec:
+  type: ClusterIP
+  selector:
+    app: prober
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090

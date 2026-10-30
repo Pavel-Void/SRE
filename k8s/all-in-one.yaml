@@ -735,7 +735,6 @@ metadata:
   namespace: default
 data:
   GF_USERS_ALLOW_SIGN_UP: "false"
-  GF_INSTALL_PLUGINS: "victoriametrics-logs-datasource"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -746,12 +745,32 @@ data:
   datasources.yaml: |
     apiVersion: 1
     datasources:
-      - name: VictoriaLogs
-        type: victoriametrics-logs-datasource
+      - name: VictoriaMetrics
+        type: prometheus
         access: proxy
-        url: http://victoria-logs.default.svc.cluster.local:9428
+        url: http://vm-single-victoria-metrics-single-server.monitoring.svc.cluster.local:8428
         isDefault: true
-        jsonData: {}
+        jsonData:
+          httpMethod: POST
+          timeInterval: 5s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: default
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -786,6 +805,12 @@ spec:
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
               subPath: datasources.yaml
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
+              subPath: dashboards.yaml
+            - name: slo-dashboard
+              mountPath: /var/lib/grafana/dashboards/slo-dashboard.json
+              subPath: slo-dashboard.json
           resources:
             requests:
               cpu: 100m
@@ -793,10 +818,22 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
       volumes:
         - name: datasources
           configMap:
             name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: slo-dashboard
+          configMap:
+            name: grafana-dashboard-slo
 ---
 apiVersion: v1
 kind: Service
@@ -813,3 +850,481 @@ spec:
     - name: http
       port: 3000
       targetPort: 3000
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-slo
+  namespace: default
+  labels:
+    grafana_dashboard: "1"
+data:
+  slo-dashboard.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 100,
+          "title": "Мгновенные показатели SLI и остаток бюджета ошибок (Error Budget)",
+          "type": "row"
+        },
+        {
+          "id": 1,
+          "title": "SLI 1: Доступность API (RBSLO Success Rate)",
+          "type": "gauge",
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "max": 100,
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 90 },
+                  { "color": "green", "value": 95 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min((sum(rate(http_server_requests_seconds_count{status=~\"2..\"}[20s])) or vector(1)) / (sum(rate(http_server_requests_seconds_count[20s])) or vector(1)) * 100, 0), 100)",
+              "legendFormat": "SLI (HTTP 2xx Success Rate %)",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "SLI 2: Задержка отклика API (Latency < 200ms)",
+          "type": "gauge",
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "max": 100,
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 90 },
+                  { "color": "green", "value": 95 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min((1 - ((sum(rate(http_server_requests_seconds_sum[20s])) or vector(0.01)) / (sum(rate(http_server_requests_seconds_count[20s])) or vector(1)) / 0.200)) * 100, 0), 100)",
+              "legendFormat": "SLI Latency %",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "SLI 3: Успешность внешнего пробера (Prober Success Rate)",
+          "type": "gauge",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "max": 100,
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 90 },
+                  { "color": "green", "value": 99 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min(avg(avg_over_time(app_prober_probe_success{target=\"health\"}[20s])) * 100, 0), 100)",
+              "legendFormat": "Prober SLI %",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+          "id": 101,
+          "title": "Динамика индикаторов во времени (SLI vs SLO пороги)",
+          "type": "row"
+        },
+        {
+          "id": 4,
+          "title": "График SLI 1: Доступность API во времени vs SLO (99.0%) и SLA (95.0%)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 105
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min((sum(rate(http_server_requests_seconds_count{status=~\"2..\"}[20s])) or vector(1)) / (sum(rate(http_server_requests_seconds_count[20s])) or vector(1)) * 100, 0), 100)",
+              "legendFormat": "SLI (HTTP Success Rate %)",
+              "refId": "A"
+            },
+            {
+              "expr": "vector(99)",
+              "legendFormat": "Целевой SLO (99.0%)",
+              "refId": "B"
+            },
+            {
+              "expr": "vector(95)",
+              "legendFormat": "Порог SLA (95.0%)",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "График SLI 3: Успешность пробера во времени vs SLO (99.5%)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 2
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 105
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min(avg(avg_over_time(app_prober_probe_success{target=\"health\"}[20s])) * 100, 0), 100)",
+              "legendFormat": "SLI Prober Success Rate %",
+              "refId": "A"
+            },
+            {
+              "expr": "vector(99.5)",
+              "legendFormat": "Целевой SLO (99.5%)",
+              "refId": "B"
+            },
+            {
+              "expr": "vector(98.0)",
+              "legendFormat": "Порог SLA (98.0%)",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Остаток бюджета ошибок (Error Budget Remaining %)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 2
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 105,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 20 },
+                  { "color": "green", "value": 70 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min(100 - (((sum(rate(http_server_requests_seconds_count{status!~\"2..\"}[20s])) or vector(0)) / (sum(rate(http_server_requests_seconds_count[20s])) or vector(1))) / 0.05 * 100), 0), 100)",
+              "legendFormat": "Остаток бюджета ошибок (%)",
+              "refId": "A"
+            },
+            {
+              "expr": "vector(0)",
+              "legendFormat": "Критический предел бюджета (0%)",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "SLI 4 (TBSLO): Аптайм подов бэкенда во времени (Доля доступных реплик)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 105
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max((count(up{job=\"kubernetes-pods\", app=\"backend\"} == 1) / 3) * 100, 100)",
+              "legendFormat": "Доступность реплик бэкенда (%)",
+              "refId": "A"
+            },
+            {
+              "expr": "vector(99.9)",
+              "legendFormat": "SLO Uptime (99.9%)",
+              "refId": "B"
+            }
+          ]
+        }
+      ],
+      "refresh": "2s",
+      "schemaVersion": 39,
+      "tags": ["SRE", "SLO", "SLI", "SLA"],
+      "time": { "from": "now-5m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Park PSU - SRE Мониторинг SLI / SLO / SLA",
+      "version": 6
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prober-script
+  namespace: default
+  labels:
+    app: prober
+data:
+  prober.js: |
+    const http = require('http');
+
+    let totalProbes = 0;
+    let successfulProbes = 0;
+    let failedProbes = 0;
+    let lastProbeSuccess = 1;
+    let lastProbeDurationSeconds = 0;
+    let lastProbeStatusCode = 200;
+
+    const BACKEND_HOST = process.env.TARGET_HOST || 'backend.default.svc.cluster.local';
+    const BACKEND_PORT = parseInt(process.env.TARGET_PORT || '8080', 10);
+    const PROBE_INTERVAL_MS = parseInt(process.env.PROBE_INTERVAL_MS || '2000', 10);
+    const METRICS_PORT = parseInt(process.env.METRICS_PORT || '9090', 10);
+
+    // Dynamic endpoint target: can be changed via HTTP POST to /simulate-failure
+    let targetPath = process.env.TARGET_PATH || '/actuator/health';
+    let forceFailure = false;
+
+    function probeEndpoint() {
+      if (forceFailure) {
+        totalProbes++;
+        failedProbes++;
+        lastProbeSuccess = 0;
+        lastProbeStatusCode = 503;
+        lastProbeDurationSeconds = 0.5;
+        return;
+      }
+
+      const start = process.hrtime();
+      const req = http.request({
+        hostname: BACKEND_HOST,
+        port: BACKEND_PORT,
+        path: targetPath,
+        method: 'GET',
+        timeout: 3000
+      }, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          const diff = process.hrtime(start);
+          const durationSec = diff[0] + diff[1] / 1e9;
+          totalProbes++;
+          lastProbeDurationSeconds = durationSec;
+          lastProbeStatusCode = res.statusCode;
+
+          if (res.statusCode >= 200 && res.statusCode < 400) {
+            successfulProbes++;
+            lastProbeSuccess = 1;
+          } else {
+            failedProbes++;
+            lastProbeSuccess = 0;
+          }
+        });
+      });
+
+      req.on('error', () => {
+        const diff = process.hrtime(start);
+        totalProbes++;
+        failedProbes++;
+        lastProbeSuccess = 0;
+        lastProbeStatusCode = 503;
+        lastProbeDurationSeconds = diff[0] + diff[1] / 1e9;
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+      });
+
+      req.end();
+    }
+
+    setInterval(probeEndpoint, PROBE_INTERVAL_MS);
+    probeEndpoint();
+
+    const server = http.createServer((req, res) => {
+      // Endpoint to inject failure into prober
+      if (req.url === '/fail') {
+        forceFailure = true;
+        res.writeHead(200);
+        return res.end('Prober failure mode ACTIVATED\n');
+      }
+      if (req.url === '/recover') {
+        forceFailure = false;
+        res.writeHead(200);
+        return res.end('Prober failure mode DEACTIVATED\n');
+      }
+
+      if (req.url === '/metrics' || req.url === '/') {
+        const responseText = [
+          '# HELP app_prober_probe_success Binary indicator if last probe succeeded (1) or failed (0)',
+          '# TYPE app_prober_probe_success gauge',
+          `app_prober_probe_success{target="health"} ${lastProbeSuccess}`,
+          '',
+          '# HELP app_prober_probe_duration_seconds Latency of the last probe in seconds',
+          '# TYPE app_prober_probe_duration_seconds gauge',
+          `app_prober_probe_duration_seconds{target="health"} ${lastProbeDurationSeconds.toFixed(6)}`,
+          '',
+          '# HELP app_prober_probes_total Total number of probes sent by prober',
+          '# TYPE app_prober_probes_total counter',
+          `app_prober_probes_total{target="health",status="success"} ${successfulProbes}`,
+          `app_prober_probes_total{target="health",status="failure"} ${failedProbes}`,
+          '',
+          '# HELP app_prober_last_status_code HTTP status code of last probe',
+          '# TYPE app_prober_last_status_code gauge',
+          `app_prober_last_status_code{target="health"} ${lastProbeStatusCode}`,
+          ''
+        ].join('\n');
+
+        res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
+        res.end(responseText);
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    server.listen(METRICS_PORT, '0.0.0.0', () => {
+      console.log(`Prober running on :${METRICS_PORT}`);
+    });
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prober-deployment
+  namespace: default
+  labels:
+    app: prober
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prober
+  template:
+    metadata:
+      labels:
+        app: prober
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: prober
+          image: node:20-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["node", "/app/prober.js"]
+          env:
+            - name: TARGET_HOST
+              value: "backend.default.svc.cluster.local"
+            - name: TARGET_PORT
+              value: "8080"
+            - name: TARGET_PATH
+              value: "/actuator/health"
+            - name: PROBE_INTERVAL_MS
+              value: "2000"
+            - name: METRICS_PORT
+              value: "9090"
+          ports:
+            - name: metrics
+              containerPort: 9090
+          volumeMounts:
+            - name: prober-code
+              mountPath: /app
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9090
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: prober-code
+          configMap:
+            name: prober-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prober
+  namespace: default
+  labels:
+    app: prober
+spec:
+  type: ClusterIP
+  selector:
+    app: prober
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090

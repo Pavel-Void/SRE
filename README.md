@@ -56,6 +56,11 @@
     * **Log Shipper (DaemonSet):** агент на уровне ноды кластера, выполняющий непрерывный сбор CRI-логов из `/var/log/pods`, парсинг JSON полезной нагрузки и стриминг в Victoria Logs по HTTP (`/insert/jsonline`);
     * **Grafana:** инструмент визуализации с настроенными источниками данных для анализа логов и метрик (порт `3001`).
 
+* **SRE, мониторинг надежности (SLI / SLO / SLA) и автономный пробер:**
+    * **Автономный синтетический пробер (Вариант А):** отдельный микросервис в Kubernetes (`k8s/10-prober.yaml`, Node.js 20 Alpine), непрерывно зондирующий эндпоинт доступности бэкенда (`/actuator/health`) каждые 2 секунды. Отдает OpenMetrics метрики на порту `9090` (`app_prober_probe_success`, `app_prober_probe_duration_seconds`, `app_prober_probes_total`) и поддерживает управляемые эндпоинты симуляции сбоев (`/fail`, `/recover`);
+    * **Автоматический провижининг Grafana SRE Dashboard:** преднастроенный дашборд `Park PSU - SRE Мониторинг SLI / SLO / SLA` (`k8s/09-grafana-dashboards.yaml`) с мгновенными спидометрами доступности и задержки, графиками SLI vs SLO/SLA, визуализацией остатка бюджета ошибок (Error Budget Remaining) с защитой от ухода в отрицательные значения;
+    * **Скрипт симуляции изменения поведения трафика (`simulate_slo_traffic.js`):** 4-фазный нагрузочный тест для контролируемого расхода бюджета ошибок и демонстрации полного цикла «норма → контролируемый расход → критическая авария → восстановление» на скринкасте.
+
 ---
 
 ## 3. Основные сущности и структура данных
@@ -145,8 +150,9 @@
    * **vmagent Web UI / Metrics:** [http://localhost:8429/metrics](http://localhost:8429/metrics)
    * **PostgreSQL Exporter (metrics):** [http://localhost:9187/metrics](http://localhost:9187/metrics)
    * **Spring Boot Actuator (Prometheus):** [http://localhost:8080/actuator/prometheus](http://localhost:8080/actuator/prometheus)
+   * **Внешний синтетический пробер (OpenMetrics):** [http://localhost:9090/metrics](http://localhost:9090/metrics)
    * **Веб-интерфейс Victoria Logs (vmui):** [http://localhost:9428/select/vmui/](http://localhost:9428/select/vmui/)
-   * **Grafana:** [http://localhost:3001](http://localhost:3001) *(логин: `admin`, пароль: `admin`)*
+   * **Grafana (SRE Дашборд SLI / SLO / SLA):** [http://localhost:3001](http://localhost:3001) *(логин: `admin`, пароль: `admin`)*
 
 ---
 
@@ -185,3 +191,48 @@
    npm ci --legacy-peer-deps
    npm run dev
    ```
+
+---
+
+## 6. SRE: Мониторинг SLI, SLO, SLA и управление бюджетом ошибок
+
+Реализована полноценная SRE-подсистема мониторинга надёжности и качества обслуживания на базе VictoriaMetrics и Grafana.
+
+### 6.1. Матрица показателей надёжности
+
+| Индикатор (SLI) | Тип | Целевой SLO | Порог SLA | Бюджет ошибок (Error Budget) | PromQL / MetricsQL запрос |
+|:---|:---:|:---:|:---:|:---:|:---|
+| **SLI 1: Доступность API** (RBSLO Success Rate) | Request-based | **99.0%** | **95.0%** | 5.0% (от SLA) / 1.0% (от SLO) | `sum(rate(http_server_requests_seconds_count{status=~"2.."}[20s])) / sum(rate(http_server_requests_seconds_count[20s])) * 100` |
+| **SLI 2: Задержка обработки** (Latency < 200ms) | Request-based | **95.0%** | **90.0%** | 10.0% | `clamp_max(clamp_min((1 - (rate(sum) / rate(count) / 0.200)) * 100, 0), 100)` |
+| **SLI 3: Внешний синтетический пробер** (Prober Success Rate) | Blackbox probe | **99.5%** | **98.0%** | 2.0% | `avg(avg_over_time(app_prober_probe_success{target="health"}[20s])) * 100` |
+| **SLI 4: Аптайм подов бэкенда** (TBSLO Pod Availability) | Time-based | **99.9%** | **99.0%** | 1.0% | `sum(up{job="kubernetes-pods", app="backend"}) / count(...) * 100` |
+
+### 6.2. Составной SLA и Бюджет ошибок
+* **Составной SLA (Composite SLA):** комплексная доступность сервиса гарантируется при одновременном выполнении условий:
+  $$\text{SLA}_{\text{total}} = (\text{SLI}_{\text{avail}} \ge 95.0\%) \land (\text{SLI}_{\text{latency}} \ge 90.0\%) \land (\text{SLI}_{\text{prober}} \ge 98.0\%)$$
+* **Остаток бюджета ошибок (Error Budget Remaining %):**
+  Нормализованный процент оставшегося бюджета относительно порога SLA (5.0% допустимых ошибок):
+  $$\text{Error Budget Remaining} = \max\left(0, \min\left(100, 100\% - \frac{\text{Error Rate}}{5.0\%} \times 100\%\right)\right)$$
+  * При 0% ошибок: **100%** (зеленая зона, норма);
+  * При контролируемой нагрузке (2.5% ошибок): **~50%** (желтая зона — сигнал команде о деградации до наступления штрафов SLA);
+  * При критической аварии ($\ge 5.0\%$ ошибок): **0%** (красная зона — бюджет полностью исчерпан, линия фиксируется ровно на нуле).
+
+### 6.3. Демонстрационный скрипт для скринкаста
+
+Для наглядной демонстрации динамики изменения индикаторов на дашборде Grafana ([http://localhost:3001](http://localhost:3001)) подготовлен скрипт `simulate_slo_traffic.js`:
+```powershell
+node simulate_slo_traffic.js
+```
+
+Сценарий последовательно проходит 4 калиброванные фазы:
+1. **Фаза 1: Штатный режим (20 сек)** — 100% успешных запросов:
+   * SLI 1 = 100%, Error Budget = 100%, SLI 3 (Пробер) = 100%.
+2. **Фаза 2: Контролируемая нагрузка (25 сек)** — 2.5% ошибок:
+   * SLI 1 опускается до ~97.5% (нарушен SLO 99%, но сохранен SLA 95%);
+   * Error Budget плавно снижается со 100% до ~50% (демонстрация постепенного расхода бюджета ошибок).
+3. **Фаза 3: Выразительный критический сбой (30 сек)** — 80% ошибок + программный сбой пробера (`/fail`):
+   * SLI 1 глубоко падает до ~20% (красная зона, существенное нарушение SLA);
+   * SLI 3 (Пробер) падает до 0%;
+   * Error Budget сгорает ровно до 0% (исчерпан, линия на 0%, без ухода в минус).
+4. **Фаза 4: Полное восстановление (25 сек)** — вызов `/recover` на пробере и прекращение ошибок:
+   * Все показатели SLI и остаток бюджета плавно и синхронно возвращаются к 100%.

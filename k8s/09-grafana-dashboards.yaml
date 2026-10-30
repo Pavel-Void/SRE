@@ -1,0 +1,271 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-slo
+  namespace: default
+  labels:
+    grafana_dashboard: "1"
+data:
+  slo-dashboard.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 100,
+          "title": "Мгновенные показатели SLI и остаток бюджета ошибок (Error Budget)",
+          "type": "row"
+        },
+        {
+          "id": 1,
+          "title": "SLI 1: Доступность API (RBSLO Success Rate)",
+          "type": "gauge",
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "max": 100,
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 90 },
+                  { "color": "green", "value": 95 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min((sum(rate(http_server_requests_seconds_count{status=~\"2..\"}[20s])) or vector(1)) / (sum(rate(http_server_requests_seconds_count[20s])) or vector(1)) * 100, 0), 100)",
+              "legendFormat": "SLI (HTTP 2xx Success Rate %)",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "SLI 2: Задержка отклика API (Latency < 200ms)",
+          "type": "gauge",
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "max": 100,
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 90 },
+                  { "color": "green", "value": 95 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min((1 - ((sum(rate(http_server_requests_seconds_sum[20s])) or vector(0.01)) / (sum(rate(http_server_requests_seconds_count[20s])) or vector(1)) / 0.200)) * 100, 0), 100)",
+              "legendFormat": "SLI Latency %",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "SLI 3: Успешность внешнего пробера (Prober Success Rate)",
+          "type": "gauge",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "max": 100,
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 90 },
+                  { "color": "green", "value": 99 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min(avg(avg_over_time(app_prober_probe_success{target=\"health\"}[20s])) * 100, 0), 100)",
+              "legendFormat": "Prober SLI %",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+          "id": 101,
+          "title": "Динамика индикаторов во времени (SLI vs SLO пороги)",
+          "type": "row"
+        },
+        {
+          "id": 4,
+          "title": "График SLI 1: Доступность API во времени vs SLO (99.0%) и SLA (95.0%)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 105
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min((sum(rate(http_server_requests_seconds_count{status=~\"2..\"}[20s])) or vector(1)) / (sum(rate(http_server_requests_seconds_count[20s])) or vector(1)) * 100, 0), 100)",
+              "legendFormat": "SLI (HTTP Success Rate %)",
+              "refId": "A"
+            },
+            {
+              "expr": "vector(99)",
+              "legendFormat": "Целевой SLO (99.0%)",
+              "refId": "B"
+            },
+            {
+              "expr": "vector(95)",
+              "legendFormat": "Порог SLA (95.0%)",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "График SLI 3: Успешность пробера во времени vs SLO (99.5%)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 2
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 105
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min(avg(avg_over_time(app_prober_probe_success{target=\"health\"}[20s])) * 100, 0), 100)",
+              "legendFormat": "SLI Prober Success Rate %",
+              "refId": "A"
+            },
+            {
+              "expr": "vector(99.5)",
+              "legendFormat": "Целевой SLO (99.5%)",
+              "refId": "B"
+            },
+            {
+              "expr": "vector(98.0)",
+              "legendFormat": "Порог SLA (98.0%)",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Остаток бюджета ошибок (Error Budget Remaining %)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 2
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 105,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 20 },
+                  { "color": "green", "value": 70 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max(clamp_min(100 - (((sum(rate(http_server_requests_seconds_count{status!~\"2..\"}[20s])) or vector(0)) / (sum(rate(http_server_requests_seconds_count[20s])) or vector(1))) / 0.05 * 100), 0), 100)",
+              "legendFormat": "Остаток бюджета ошибок (%)",
+              "refId": "A"
+            },
+            {
+              "expr": "vector(0)",
+              "legendFormat": "Критический предел бюджета (0%)",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "SLI 4 (TBSLO): Аптайм подов бэкенда во времени (Доля доступных реплик)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "VictoriaMetrics" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 105
+            }
+          },
+          "targets": [
+            {
+              "expr": "clamp_max((count(up{job=\"kubernetes-pods\", app=\"backend\"} == 1) / 3) * 100, 100)",
+              "legendFormat": "Доступность реплик бэкенда (%)",
+              "refId": "A"
+            },
+            {
+              "expr": "vector(99.9)",
+              "legendFormat": "SLO Uptime (99.9%)",
+              "refId": "B"
+            }
+          ]
+        }
+      ],
+      "refresh": "2s",
+      "schemaVersion": 39,
+      "tags": ["SRE", "SLO", "SLI", "SLA"],
+      "time": { "from": "now-5m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Park PSU - SRE Мониторинг SLI / SLO / SLA",
+      "version": 6
+    }
