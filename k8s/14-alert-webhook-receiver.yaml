@@ -1,0 +1,312 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alert-webhook-code
+  namespace: default
+data:
+  server.js: |
+    const http = require('http');
+
+    process.env.TZ = process.env.TZ || 'Asia/Yekaterinburg';
+    const PORT = 5001;
+    const alertHistory = [];
+
+    const server = http.createServer((req, res) => {
+      // CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      // POST /api/alerts - эндпоинт для приема вебхуков от Alertmanager
+      if (req.method === 'POST' && req.url === '/api/alerts') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            const receivedAt = new Date().toISOString();
+            const groupKey = data.groupKey || 'default';
+            const status = data.status || 'unknown';
+            const alerts = data.alerts || [];
+
+            console.log(`[ALERTMANAGER HOOK] Status: ${status.toUpperCase()} | Group: ${groupKey} | Count: ${alerts.length}`);
+
+            for (const a of alerts) {
+              const entry = {
+                id: Math.random().toString(36).substring(2, 9),
+                receivedAt,
+                status: a.status,
+                alertname: a.labels?.alertname || 'Unnamed',
+                severity: a.labels?.severity || 'info',
+                component: a.labels?.component || 'system',
+                summary: a.annotations?.summary || 'No summary',
+                description: a.annotations?.description || 'No description',
+                startsAt: a.startsAt,
+                endsAt: a.endsAt,
+                labels: a.labels || {},
+                annotations: a.annotations || {}
+              };
+              alertHistory.unshift(entry);
+              console.log(` -> [${a.status.toUpperCase()}] ${entry.alertname} (${entry.severity}): ${entry.summary}`);
+            }
+
+            if (alertHistory.length > 100) alertHistory.length = 100;
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'ok', received: alerts.length }));
+          } catch (e) {
+            console.error('Failed to parse webhook JSON:', e.message);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'invalid json' }));
+          }
+        });
+        return;
+      }
+
+      // GET /api/alerts - JSON список всех полученных уведомлений
+      if (req.method === 'GET' && req.url === '/api/alerts') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(alertHistory));
+        return;
+      }
+
+      // POST /api/clear - сброс лога уведомлений
+      if (req.method === 'POST' && req.url === '/api/clear') {
+        alertHistory.length = 0;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'cleared' }));
+        return;
+      }
+
+      // GET / - Интерактивный веб-интерфейс с поддержкой локального часового пояса пользователя (UTC+5 / browser)
+      if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
+        const html = `<!DOCTYPE html>
+    <html lang="ru">
+    <head>
+      <meta charset="UTF-8">
+      <title>Park PSU — Alertmanager Webhook Receiver</title>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background: #0f172a; color: #f8fafc; padding: 24px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 16px; margin-bottom: 24px; }
+        h1 { font-size: 24px; color: #38bdf8; display: flex; align-items: center; gap: 10px; }
+        .header-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+        .tz-pill { font-size: 13px; background: #1e293b; color: #38bdf8; padding: 5px 12px; border-radius: 12px; border: 1px solid #0284c7; font-weight: 500; }
+        .refresh-pill { font-size: 12px; background: #334155; color: #94a3b8; padding: 4px 10px; border-radius: 12px; }
+        .stats { display: flex; gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: #1e293b; border-radius: 8px; padding: 16px 20px; flex: 1; border: 1px solid #334155; }
+        .stat-val { font-size: 28px; font-weight: bold; margin-top: 4px; }
+        .stat-firing { color: #ef4444; }
+        .stat-resolved { color: #22c55e; }
+        .stat-total { color: #94a3b8; }
+        .alert-card { background: #1e293b; border-radius: 8px; border-left: 6px solid #64748b; margin-bottom: 14px; padding: 16px 20px; border-top: 1px solid #334155; border-right: 1px solid #334155; border-bottom: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); transition: all 0.2s ease; }
+        .alert-firing { border-left-color: #ef4444; }
+        .alert-resolved { border-left-color: #22c55e; }
+        .alert-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .badge { padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+        .badge-firing { background: #7f1d1d; color: #fca5a5; border: 1px solid #b91c1c; }
+        .badge-resolved { background: #14532d; color: #86efac; border: 1px solid #15803d; }
+        .badge-critical { background: #450a0a; color: #f87171; border: 1px solid #991b1b; }
+        .badge-warning { background: #451a03; color: #fdba74; border: 1px solid #c2410c; }
+        .alert-name { font-size: 18px; font-weight: 600; color: #f1f5f9; }
+        .alert-time { font-size: 14px; color: #38bdf8; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 600; }
+        .summary { font-size: 15px; color: #e2e8f0; font-weight: 500; margin-bottom: 6px; }
+        .desc { font-size: 14px; color: #94a3b8; line-height: 1.4; margin-bottom: 10px; }
+        .meta { font-size: 13px; color: #64748b; display: flex; gap: 16px; flex-wrap: wrap; }
+        .meta b { color: #94a3b8; }
+        .empty { text-align: center; padding: 48px; color: #64748b; font-size: 16px; background: #1e293b; border-radius: 8px; border: 1px dashed #334155; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <header>
+          <div>
+            <h1>🔔 Park PSU — Alertmanager Webhook Receiver</h1>
+            <p style="color:#64748b; font-size:13px; margin-top:4px;">Приёмник уведомлений об инцидентах от Prometheus Alertmanager</p>
+          </div>
+          <div class="header-meta">
+            <div class="tz-pill" id="tz-display">Часовой пояс: Определение...</div>
+            <div class="refresh-pill">Автообновление (2с)</div>
+          </div>
+        </header>
+
+        <div class="stats">
+          <div class="stat-card">
+            <div style="font-size:12px; color:#94a3b8; text-transform:uppercase;">Активные (Firing)</div>
+            <div class="stat-val stat-firing" id="count-firing">0</div>
+          </div>
+          <div class="stat-card">
+            <div style="font-size:12px; color:#94a3b8; text-transform:uppercase;">Восстановленные (Resolved)</div>
+            <div class="stat-val stat-resolved" id="count-resolved">0</div>
+          </div>
+          <div class="stat-card">
+            <div style="font-size:12px; color:#94a3b8; text-transform:uppercase;">Всего событий</div>
+            <div class="stat-val stat-total" id="count-total">0</div>
+          </div>
+        </div>
+
+        <div id="alerts-list">
+          <div class="empty">
+            <p>Загрузка уведомлений...</p>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        // Определение локального часового пояса пользователя в браузере
+        const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Yekaterinburg';
+        const offsetMinutes = -new Date().getTimezoneOffset();
+        const offsetHours = (offsetMinutes >= 0 ? '+' : '') + Math.floor(offsetMinutes / 60);
+        document.getElementById('tz-display').textContent = 'Часовой пояс пользователя: ' + userTz + ' (UTC' + offsetHours + ')';
+
+        // Форматирование даты в 24-часовом локальном формате пользователя (HH:mm:ss)
+        function formatLocalTime(isoStr) {
+          if (!isoStr || isoStr.startsWith('0001-01-01')) return null;
+          try {
+            const d = new Date(isoStr);
+            return d.toLocaleTimeString('ru-RU', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+            });
+          } catch (e) {
+            return isoStr;
+          }
+        }
+
+        async function updateAlerts() {
+          try {
+            const res = await fetch('/api/alerts');
+            if (!res.ok) return;
+            const alerts = await res.json();
+
+            const firing = alerts.filter(a => a.status === 'firing').length;
+            const resolved = alerts.filter(a => a.status === 'resolved').length;
+
+            document.getElementById('count-firing').textContent = firing;
+            document.getElementById('count-resolved').textContent = resolved;
+            document.getElementById('count-total').textContent = alerts.length;
+
+            const listEl = document.getElementById('alerts-list');
+
+            if (alerts.length === 0) {
+              listEl.innerHTML = '<div class="empty"><p>Уведомлений пока нет. Система ожидает сработки алертов от Alertmanager.</p><p style="margin-top:8px; font-size:13px;">Запустите <code>node trigger_alerts.js prober-fail</code> для генерации инцидента.</p></div>';
+              return;
+            }
+
+            let html = '';
+            for (const a of alerts) {
+              const isFiring = a.status === 'firing';
+              const receivedFormatted = formatLocalTime(a.receivedAt) || 'N/A';
+              const startsFormatted = formatLocalTime(a.startsAt);
+              const endsFormatted = formatLocalTime(a.endsAt);
+
+              html += '<div class="alert-card ' + (isFiring ? 'alert-firing' : 'alert-resolved') + '">';
+              html += '  <div class="alert-head">';
+              html += '    <div style="display:flex; align-items:center; gap:10px;">';
+              html += '      <span class="badge ' + (isFiring ? 'badge-firing' : 'badge-resolved') + '">' + a.status + '</span>';
+              html += '      <span class="badge ' + (a.severity === 'critical' ? 'badge-critical' : 'badge-warning') + '">' + a.severity + '</span>';
+              html += '      <span class="alert-name">' + a.alertname + '</span>';
+              html += '    </div>';
+              html += '    <span class="alert-time">' + receivedFormatted + '</span>';
+              html += '  </div>';
+              html += '  <div class="summary">' + a.summary + '</div>';
+              html += '  <div class="desc">' + a.description + '</div>';
+              html += '  <div class="meta">';
+              html += '    <span><b>Компонент:</b> ' + a.component + '</span>';
+              if (startsFormatted) html += '    <span><b>Старт:</b> ' + startsFormatted + '</span>';
+              if (!isFiring && endsFormatted) html += '    <span><b>Конец:</b> ' + endsFormatted + '</span>';
+              html += '  </div>';
+              html += '</div>';
+            }
+            listEl.innerHTML = html;
+          } catch (e) {
+            console.error('Failed to update alerts:', e);
+          }
+        }
+
+        // Первоначальный запрос и автообновление каждые 2 секунды
+        updateAlerts();
+        setInterval(updateAlerts, 2000);
+      </script>
+    </body>
+    </html>`;
+
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(html);
+        return;
+      }
+
+      res.writeHead(404);
+      res.end('Not Found');
+    });
+
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`Alert Webhook Receiver listening on port ${PORT} (TZ: ${process.env.TZ})`);
+    });
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-webhook-receiver
+  namespace: default
+  labels:
+    app: alert-webhook-receiver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alert-webhook-receiver
+  template:
+    metadata:
+      labels:
+        app: alert-webhook-receiver
+    spec:
+      containers:
+        - name: receiver
+          image: node:20-alpine
+          command: ["node", "/app/server.js"]
+          env:
+            - name: TZ
+              value: "Asia/Yekaterinburg"
+          ports:
+            - containerPort: 5001
+              name: http
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: code
+              mountPath: /app
+      volumes:
+        - name: code
+          configMap:
+            name: alert-webhook-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-webhook-receiver
+  namespace: default
+  labels:
+    app: alert-webhook-receiver
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5001
+      targetPort: 5001
+      name: http
+  selector:
+    app: alert-webhook-receiver

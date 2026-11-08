@@ -8,6 +8,9 @@ $vlogsJob    = Start-Job -ScriptBlock { while ($true) { kubectl port-forward svc
 $grafanaJob  = Start-Job -ScriptBlock { while ($true) { kubectl port-forward svc/grafana 3001:3000; Start-Sleep -Seconds 1 } }
 $pgMetricsJob = Start-Job -ScriptBlock { while ($true) { kubectl port-forward svc/postgres 9187:9187; Start-Sleep -Seconds 1 } }
 $proberJob   = Start-Job -ScriptBlock { while ($true) { kubectl port-forward svc/prober 9090:9090; Start-Sleep -Seconds 1 } }
+$alertmanagerJob = Start-Job -ScriptBlock { while ($true) { kubectl port-forward svc/alertmanager 9093:9093; Start-Sleep -Seconds 1 } }
+$vmalertJob  = Start-Job -ScriptBlock { while ($true) { kubectl port-forward svc/vmalert 8880:8880; Start-Sleep -Seconds 1 } }
+$webhookJob  = Start-Job -ScriptBlock { while ($true) { kubectl port-forward svc/alert-webhook-receiver 5001:5001; Start-Sleep -Seconds 1 } }
 
 Start-Sleep -Seconds 3
 
@@ -20,6 +23,9 @@ Write-Host "PostgreSQL Exporter:            http://localhost:9187/metrics" -Fore
 Write-Host "VictoriaLogs Web UI (vmui):     http://localhost:9428/select/vmui/" -ForegroundColor Yellow
 Write-Host "Grafana (SLO/SLA Dashboard):    http://localhost:3001 (login: admin, password: admin)" -ForegroundColor Yellow
 Write-Host "Prober Metrics:                 http://localhost:9090/metrics" -ForegroundColor Yellow
+Write-Host "Alertmanager Web UI:            http://localhost:9093" -ForegroundColor Yellow
+Write-Host "vmalert Web UI (Rules/Alerts):  http://localhost:8880" -ForegroundColor Yellow
+Write-Host "Alert Webhook Receiver UI:      http://localhost:5001" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "To stop forwarding, press Ctrl+C or close this window." -ForegroundColor Gray
 
@@ -28,7 +34,7 @@ try {
         Start-Sleep -Seconds 1
     }
 } finally {
-    Stop-Job $backendJob, $frontendJob, $vmSingleJob, $vmAgentJob, $vlogsJob, $grafanaJob, $pgMetricsJob, $proberJob -ErrorAction SilentlyContinue
-    Remove-Job $backendJob, $frontendJob, $vmSingleJob, $vmAgentJob, $vlogsJob, $grafanaJob, $pgMetricsJob, $proberJob -ErrorAction SilentlyContinue
+    Stop-Job $backendJob, $frontendJob, $vmSingleJob, $vmAgentJob, $vlogsJob, $grafanaJob, $pgMetricsJob, $proberJob, $alertmanagerJob, $vmalertJob, $webhookJob -ErrorAction SilentlyContinue
+    Remove-Job $backendJob, $frontendJob, $vmSingleJob, $vmAgentJob, $vlogsJob, $grafanaJob, $pgMetricsJob, $proberJob, $alertmanagerJob, $vmalertJob, $webhookJob -ErrorAction SilentlyContinue
     Write-Host "Port forwarding stopped." -ForegroundColor Red
 }

@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmalert
+  namespace: default
+  labels:
+    app: vmalert
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vmalert
+  template:
+    metadata:
+      labels:
+        app: vmalert
+    spec:
+      containers:
+        - name: vmalert
+          image: victoriametrics/vmalert:v1.103.0
+          args:
+            - "-rule=/etc/alerts/*.yaml"
+            - "-datasource.url=http://vm-single-victoria-metrics-single-server.monitoring.svc.cluster.local:8428"
+            - "-notifier.url=http://alertmanager.default.svc.cluster.local:9093"
+            - "-evaluationInterval=10s"
+            - "-httpListenAddr=:8880"
+          ports:
+            - containerPort: 8880
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: rules-volume
+              mountPath: /etc/alerts
+      volumes:
+        - name: rules-volume
+          configMap:
+            name: alert-rules
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmalert
+  namespace: default
+  labels:
+    app: vmalert
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8880
+      targetPort: 8880
+      name: http
+  selector:
+    app: vmalert
