@@ -24,6 +24,7 @@ data:
     // Dynamic endpoint target: can be changed via HTTP POST to /simulate-failure
     let targetPath = process.env.TARGET_PATH || '/actuator/health';
     let forceFailure = false;
+    let artificialDelaySec = 0;
 
     function probeEndpoint() {
       if (forceFailure) {
@@ -31,7 +32,7 @@ data:
         failedProbes++;
         lastProbeSuccess = 0;
         lastProbeStatusCode = 503;
-        lastProbeDurationSeconds = 0.5;
+        lastProbeDurationSeconds = 0.003;
         return;
       }
 
@@ -47,7 +48,7 @@ data:
         res.on('data', chunk => body += chunk);
         res.on('end', () => {
           const diff = process.hrtime(start);
-          const durationSec = diff[0] + diff[1] / 1e9;
+          const durationSec = diff[0] + diff[1] / 1e9 + artificialDelaySec;
           totalProbes++;
           lastProbeDurationSeconds = durationSec;
           lastProbeStatusCode = res.statusCode;
@@ -68,7 +69,7 @@ data:
         failedProbes++;
         lastProbeSuccess = 0;
         lastProbeStatusCode = 503;
-        lastProbeDurationSeconds = diff[0] + diff[1] / 1e9;
+        lastProbeDurationSeconds = diff[0] + diff[1] / 1e9 + artificialDelaySec;
       });
 
       req.on('timeout', () => {
@@ -90,8 +91,19 @@ data:
       }
       if (req.url === '/recover') {
         forceFailure = false;
+        artificialDelaySec = 0;
         res.writeHead(200);
         return res.end('Prober failure mode DEACTIVATED\n');
+      }
+      if (req.url === '/delay') {
+        artificialDelaySec = 0.35; // 350ms (выше порога SLO 200ms)
+        res.writeHead(200);
+        return res.end('Prober artificial delay ACTIVATED (350ms)\n');
+      }
+      if (req.url === '/nodelay') {
+        artificialDelaySec = 0;
+        res.writeHead(200);
+        return res.end('Prober artificial delay DEACTIVATED\n');
       }
 
       if (req.url === '/metrics' || req.url === '/') {
