@@ -81,7 +81,7 @@ async function main() {
   console.log('    * Бюджет ошибок полон, соглашение SLA полностью соблюдается.');
   const p1End = Date.now() + 20000;
   while (Date.now() < p1End) {
-    await sendBackendBatch(0, 40);
+    await sendBackendBatch(0, 100);
     process.stdout.write('.');
     await sleep(300);
   }
@@ -95,7 +95,7 @@ async function main() {
   await setProberDelay(true);
   const p2End = Date.now() + 20000;
   while (Date.now() < p2End) {
-    await sendBackendBatch(0, 40);
+    await sendBackendBatch(0, 100);
     process.stdout.write('~');
     await sleep(300);
   }
@@ -109,7 +109,7 @@ async function main() {
   console.log('    * Демонстрация принципа SRE: команда видит таяние бюджета ошибок до срыва клиентского SLA.');
   const p3End = Date.now() + 25000;
   while (Date.now() < p3End) {
-    await sendBackendBatch(2.5, 40);
+    await sendBackendBatch(2.5, 100);
     process.stdout.write('-');
     await sleep(300);
   }
@@ -124,7 +124,7 @@ async function main() {
 
   const p4End = Date.now() + 25000;
   while (Date.now() < p4End) {
-    await sendBackendBatch(80, 40);
+    await sendBackendBatch(80, 100);
     process.stdout.write('X');
     await sleep(300);
   }
@@ -139,7 +139,7 @@ async function main() {
 
   const p5End = Date.now() + 20000;
   while (Date.now() < p5End) {
-    await sendBackendBatch(0, 40);
+    await sendBackendBatch(0, 100);
     process.stdout.write('.');
     await sleep(300);
   }
