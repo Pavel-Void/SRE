@@ -114,7 +114,8 @@ data:
         .alert-firing { border-left-color: #ef4444; }
         .alert-active-now { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.45), 0 8px 18px rgba(0, 0, 0, 0.4); background: #1e293b; }
         .alert-resolved { border-left-color: #22c55e; }
-        .alert-historical { opacity: 0.45; filter: saturate(0.65); }
+        .alert-resolved-now { box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.4), 0 8px 18px rgba(0, 0, 0, 0.35); background: #1e293b; }
+        .alert-historical { opacity: 0.42; filter: saturate(0.6); }
         .alert-historical:hover { opacity: 0.92; filter: saturate(1); }
         .ref-cause { font-size: 12px; color: #64748b; margin-bottom: 8px; padding-left: 8px; border-left: 2px solid #334155; }
         .alert-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -231,7 +232,7 @@ data:
             // Вычисляем актуальное состояние каждого уникального алерта по его последнему (самому верхнему) событию
             const latestByAlert = new Map();
             for (const a of alerts) {
-              const key = a.alertname + '|' + (a.labels?.instance || '') + '|' + (a.component || '');
+              const key = a.alertname + '|' + (a.component || '');
               if (!latestByAlert.has(key)) {
                 latestByAlert.set(key, { status: a.status, id: a.id });
               }
@@ -253,9 +254,9 @@ data:
             let html = '';
             for (const a of alerts) {
               const isFiring = a.status === 'firing';
-              const key = a.alertname + '|' + (a.labels?.instance || '') + '|' + (a.component || '');
+              const key = a.alertname + '|' + (a.component || '');
               const latest = latestByAlert.get(key);
-              const isActiveNow = isFiring && latest && latest.status === 'firing' && latest.id === a.id;
+              const isLatestForAlert = latest && latest.id === a.id;
 
               const receivedFormatted = formatLocalTime(a.receivedAt) || 'N/A';
               const startsFormatted = formatLocalTime(a.startsAt);
@@ -269,10 +270,15 @@ data:
                 ? a.description
                 : (a.resolvedDescription || 'Метрика вернулась в допустимые пределы. Инцидент закрыт.');
 
+              let stateClass = 'alert-historical';
+              if (isLatestForAlert) {
+                stateClass = isFiring ? 'alert-active-now' : 'alert-resolved-now';
+              }
+
               const cardClasses = [
                 'alert-card',
                 isFiring ? 'alert-firing' : 'alert-resolved',
-                isActiveNow ? 'alert-active-now' : 'alert-historical'
+                stateClass
               ].join(' ');
 
               html += '<div class="' + cardClasses + '">';
