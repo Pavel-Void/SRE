@@ -152,10 +152,11 @@ async function triggerProberFail() {
 
 async function triggerProberRecover() {
   console.log('>>> [ВОССТАНОВЛЕНИЕ: ProberServiceDown]');
-  console.log('    Отправляю запрос /recover на порт автономного пробера (9090)...');
+  console.log('    Отправляю запросы /recover и /nodelay на порт автономного пробера (9090)...');
   const res = await sendHttp(PROBER_PORT, '/recover');
+  await sendHttp(PROBER_PORT, '/nodelay');
   console.log(`    Ответ пробера: статус ${res.status}.`);
-  console.log('    [OK] Пробер восстановлен в штатный режим.');
+  console.log('    [OK] Пробер восстановлен в штатный режим (SLI 3 вернётся к 100%).');
   console.log('    В Alertmanager и вебхуке статус алерта изменится на RESOLVED.');
 }
 
@@ -208,7 +209,7 @@ async function runDemo() {
   await triggerProberFail();
 
   console.log('   -> Серия неудачных авторизаций (HighAuthFailureRate)');
-  await triggerAuthFailures(30);
+  await triggerAuthFailures(45);
 
   console.log('   -> Поток HTTP ошибок для превышения порога 5% (HighHttpErrorRate)');
   await triggerHttpErrors(25);

@@ -100,6 +100,8 @@ data:
         .header-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
         .tz-pill { font-size: 13px; background: #1e293b; color: #38bdf8; padding: 5px 12px; border-radius: 12px; border: 1px solid #0284c7; font-weight: 500; }
         .refresh-pill { font-size: 12px; background: #334155; color: #94a3b8; padding: 4px 10px; border-radius: 12px; }
+        .clear-btn { font-size: 12px; background: #334155; color: #f8fafc; padding: 4px 10px; border-radius: 12px; border: 1px solid #475569; cursor: pointer; }
+        .clear-btn:hover { background: #475569; }
         .stats { display: flex; gap: 16px; margin-bottom: 24px; }
         .stat-card { background: #1e293b; border-radius: 8px; padding: 16px 20px; flex: 1; border: 1px solid #334155; }
         .stat-val { font-size: 28px; font-weight: bold; margin-top: 4px; }
@@ -133,17 +135,20 @@ data:
           </div>
           <div class="header-meta">
             <div class="tz-pill" id="tz-display">Часовой пояс: Определение...</div>
-            <div class="refresh-pill">Автообновление (2с)</div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button class="clear-btn" onclick="clearAlerts()">Очистить историю</button>
+              <div class="refresh-pill">Автообновление (2с)</div>
+            </div>
           </div>
         </header>
 
         <div class="stats">
           <div class="stat-card">
-            <div style="font-size:12px; color:#94a3b8; text-transform:uppercase;">Активные (Firing)</div>
+            <div style="font-size:12px; color:#94a3b8; text-transform:uppercase;">Активные сейчас (Firing)</div>
             <div class="stat-val stat-firing" id="count-firing">0</div>
           </div>
           <div class="stat-card">
-            <div style="font-size:12px; color:#94a3b8; text-transform:uppercase;">Восстановленные (Resolved)</div>
+            <div style="font-size:12px; color:#94a3b8; text-transform:uppercase;">Восстановлено (Resolved)</div>
             <div class="stat-val stat-resolved" id="count-resolved">0</div>
           </div>
           <div class="stat-card">
@@ -182,16 +187,33 @@ data:
           }
         }
 
+        async function clearAlerts() {
+          try {
+            await fetch('/api/clear', { method: 'POST' });
+            await updateAlerts();
+          } catch (e) {
+            console.error('Failed to clear alerts:', e);
+          }
+        }
+
         async function updateAlerts() {
           try {
             const res = await fetch('/api/alerts');
             if (!res.ok) return;
             const alerts = await res.json();
 
-            const firing = alerts.filter(a => a.status === 'firing').length;
+            // Вычисляем текущее состояние каждого уникального алерта по его последнему событию (alerts отсортированы от новых к старым)
+            const latestByAlert = new Map();
+            for (const a of alerts) {
+              const key = a.alertname + '|' + (a.labels?.instance || '') + '|' + (a.component || '');
+              if (!latestByAlert.has(key)) {
+                latestByAlert.set(key, a.status);
+              }
+            }
+            const activeFiring = Array.from(latestByAlert.values()).filter(s => s === 'firing').length;
             const resolved = alerts.filter(a => a.status === 'resolved').length;
 
-            document.getElementById('count-firing').textContent = firing;
+            document.getElementById('count-firing').textContent = activeFiring;
             document.getElementById('count-resolved').textContent = resolved;
             document.getElementById('count-total').textContent = alerts.length;
 
