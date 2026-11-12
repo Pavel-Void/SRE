@@ -57,9 +57,12 @@
     * **Grafana:** инструмент визуализации с настроенными источниками данных для анализа логов и метрик (порт `3001`).
 
 * **SRE, мониторинг надежности (SLI / SLO / SLA) и автономный пробер:**
-    * **Автономный синтетический пробер (Вариант А):** отдельный микросервис в Kubernetes (`k8s/10-prober.yaml`, Node.js 20 Alpine), непрерывно зондирующий эндпоинт доступности бэкенда (`/actuator/health`) каждые 2 секунды. Отдает OpenMetrics метрики на порту `9090` (`app_prober_probe_success`, `app_prober_probe_duration_seconds`, `app_prober_probes_total`) и поддерживает управляемые эндпоинты симуляции сбоев (`/fail`, `/recover`);
-    * **Автоматический провижининг Grafana SRE Dashboard:** преднастроенный дашборд `Park PSU - SRE Мониторинг SLI / SLO / SLA` (`k8s/09-grafana-dashboards.yaml`) с мгновенными спидометрами доступности и задержки, графиками SLI vs SLO/SLA, визуализацией остатка бюджета ошибок (Error Budget Remaining) с защитой от ухода в отрицательные значения;
-    * **Скрипт симуляции изменения поведения трафика (`simulate_slo_traffic.js`):** 4-фазный нагрузочный тест для контролируемого расхода бюджета ошибок и демонстрации полного цикла «норма → контролируемый расход → критическая авария → восстановление» на скринкасте.
+    * **Автономный синтетический пробер (Вариант А):** отдельный микросервис в Kubernetes (`k8s/10-prober.yaml`, Node.js 20 Alpine), непрерывно зондирующий эндпоинт доступности бэкенда (`/actuator/health`) каждые 2 секунды. Отдает OpenMetrics метрики на порту `9090` (`app_prober_probe_success`, `app_prober_probe_duration_seconds`, `app_prober_probes_total`) и поддерживает управляемые эндпоинты симуляции сбоев (`/fail`, `/recover`) и задержек (`/delay`, `/nodelay`);
+    * **Автоматический провижининг Grafana SRE Dashboard:** компактный 5-панельный дашборд `Park PSU - SRE Мониторинг SLI / SLO / SLA` (`k8s/09-grafana-dashboards.yaml`), помещающийся на одном экране 1920×1080: графики динамики SLI 1/2/3 относительно порогов SLO, остаток бюджета ошибок (от 1.0% лимита SLO с защитой от ухода в минус) и интегральный индикатор соблюдения SLA (95.0%);
+    * **Скрипт симуляции изменения поведения трафика (`simulate_slo_traffic.js`):** 5-фазный нагрузочный тест для демонстрации деградации Latency, контролируемого расхода Error Budget, критического сбоя и восстановления на скринкасте.
+
+* **Мониторинг инцидентов и алертинг:**
+    * **VictoriaMetrics Alerting (`vmalert`) и Prometheus Alertmanager:** автоматическая оценка 5 правил алертинга (3 сервисных и 2 на метрики рантайма Spring Boot Actuator) и маршрутизация уведомлений в интерактивный **Alert Webhook Receiver** (`k8s/11`–`k8s/14`).
 
 ---
 
@@ -132,7 +135,7 @@
    ```
    *(Также доступны статические манифесты: `kubectl apply -f k8s/monitoring/`)*
 
-3. **Развернуть сервисы приложения (PostgreSQL, Backend, Frontend, VictoriaLogs, Grafana):**
+3. **Развернуть сервисы приложения, мониторинга и алертинга (PostgreSQL, Backend, Frontend, VictoriaLogs, Grafana, Prober, vmalert, Alertmanager):**
    ```powershell
    kubectl apply -f k8s/all-in-one.yaml
    ```
@@ -153,6 +156,9 @@
    * **Внешний синтетический пробер (OpenMetrics):** [http://localhost:9090/metrics](http://localhost:9090/metrics)
    * **Веб-интерфейс Victoria Logs (vmui):** [http://localhost:9428/select/vmui/](http://localhost:9428/select/vmui/)
    * **Grafana (SRE Дашборд SLI / SLO / SLA):** [http://localhost:3001](http://localhost:3001) *(логин: `admin`, пароль: `admin`)*
+   * **Alertmanager Web UI:** [http://localhost:9093](http://localhost:9093)
+   * **Alert Webhook Receiver UI:** [http://localhost:5001](http://localhost:5001)
+   * **vmalert Web UI (правила алертов):** [http://localhost:8880](http://localhost:8880)
 
 ---
 
@@ -196,46 +202,43 @@
 
 ## 6. SRE: Мониторинг SLI, SLO, SLA и управление бюджетом ошибок
 
-Реализована полноценная SRE-подсистема мониторинга надёжности и качества обслуживания на базе VictoriaMetrics и Grafana.
+Реализована полноценная SRE-подсистема мониторинга надёжности и качества обслуживания на базе VictoriaMetrics и Grafana (подробности и математическое обоснование см. в [`Отчёт_5.md`](Отчёт_5.md)).
 
 ### 6.1. Матрица показателей надёжности
 
-| Индикатор (SLI) | Тип | Целевой SLO | Порог SLA | Бюджет ошибок (Error Budget) | PromQL / MetricsQL запрос |
+| Индикатор (SLI) | Тип | Целевой SLO | Порог SLA (месяц) | Бюджет ошибок (от SLO) | PromQL / MetricsQL запрос |
 |:---|:---:|:---:|:---:|:---:|:---|
-| **SLI 1: Доступность API** (RBSLO Success Rate) | Request-based | **99.0%** | **95.0%** | 5.0% (от SLA) / 1.0% (от SLO) | `sum(rate(http_server_requests_seconds_count{status=~"2.."}[20s])) / sum(rate(http_server_requests_seconds_count[20s])) * 100` |
-| **SLI 2: Задержка обработки** (Latency < 200ms) | Request-based | **95.0%** | **90.0%** | 10.0% | `clamp_max(clamp_min((1 - (rate(sum) / rate(count) / 0.200)) * 100, 0), 100)` |
-| **SLI 3: Внешний синтетический пробер** (Prober Success Rate) | Blackbox probe | **99.5%** | **98.0%** | 2.0% | `avg(avg_over_time(app_prober_probe_success{target="health"}[20s])) * 100` |
-| **SLI 4: Аптайм подов бэкенда** (TBSLO Pod Availability) | Time-based | **99.9%** | **99.0%** | 1.0% | `sum(up{job="kubernetes-pods", app="backend"}) / count(...) * 100` |
+| **SLI 1: Доступность API** (RBSLO Success Rate) | Request-based | **99.0%** | **95.0%** | **1.0%** (буфер 4.0% до SLA) | `clamp_max(clamp_min((sum(rate(http_server_requests_seconds_count{status=~"2.."}[20s])) or vector(1)) / (sum(rate(http_server_requests_seconds_count[20s])) or vector(1)) * 100, 0), 100)` |
+| **SLI 2: Задержка обработки** (API Latency Score < 200ms) | Request/Time-based | **95.0%** | **90.0%** | 5.0% | `clamp_max(clamp_min((1 - ((avg(avg_over_time(app_prober_probe_duration_seconds{target="health"}[20s])) or (rate(sum)/rate(count))) / 0.200)) * 100, 0), 100)` |
+| **SLI 3: Внешний синтетический пробер** (Prober Success Rate) | Blackbox probe | **99.5%** | **98.0%** | 0.5% | `clamp_max(clamp_min(avg(avg_over_time(app_prober_probe_success{target="health"}[20s])) * 100, 0), 100)` |
 
-### 6.2. Составной SLA и Бюджет ошибок
-* **Составной SLA (Composite SLA):** комплексная доступность сервиса гарантируется при одновременном выполнении условий:
-  $$\text{SLA}_{\text{total}} = (\text{SLI}_{\text{avail}} \ge 95.0\%) \land (\text{SLI}_{\text{latency}} \ge 90.0\%) \land (\text{SLI}_{\text{prober}} \ge 98.0\%)$$
-* **Остаток бюджета ошибок (Error Budget Remaining %):**
-  Нормализованный процент оставшегося бюджета относительно порога SLA (5.0% допустимых ошибок):
-  $$\text{Error Budget Remaining} = \max\left(0, \min\left(100, 100\% - \frac{\text{Error Rate}}{5.0\%} \times 100\%\right)\right)$$
-  * При 0% ошибок: **100%** (зеленая зона, норма);
-  * При контролируемой нагрузке (2.5% ошибок): **~50%** (желтая зона — сигнал команде о деградации до наступления штрафов SLA);
-  * При критической аварии ($\ge 5.0\%$ ошибок): **0%** (красная зона — бюджет полностью исчерпан, линия фиксируется ровно на нуле).
+### 6.2. Составной SLA и Бюджет ошибок (Error Budget)
+* **Составной SLA (Composite SLA):** комплексная доступность сервиса за отчётный календарный месяц гарантируется при одновременном выполнении условий:
+  $$\text{SLA}_{\text{composite}} = (\text{SLA}_{\text{avail\_month}} \ge 95.0\%) \land (\text{SLA}_{\text{latency\_month}} \ge 90.0\%) \land (\text{SLA}_{\text{prober\_month}} \ge 98.0\%)$$
+* **Связь бюджета ошибок с SLO и Safety Buffer:**
+  В соответствии с методологией Google SRE бюджет ошибок рассчитывается относительно внутреннего инженерного **SLO ($99.0\%$)**:
+  $$\text{Error Limit} = 100\% - 99.0\% = 1.0\%, \qquad \text{Safety Buffer} = 99.0\% - 95.0\% = 4.0\%$$
+  $$\text{Error Budget Remaining} = \max\left(0, \min\left(100, 100\% - \frac{\text{Error Rate}}{1.0\%} \times 100\%\right)\right)$$
+  * При исчерпании бюджета ошибок до **0%** (достижении лимита 1% ошибок) объявляется **Feature Freeze** — команда останавливает выкатку рискованных релизов до наступления клиентских штрафов по SLA ($95.0\%$).
 
 ### 6.3. Демонстрационный скрипт для скринкаста
 
-Для наглядной демонстрации динамики изменения индикаторов на дашборде Grafana ([http://localhost:3001](http://localhost:3001)) подготовлен скрипт `simulate_slo_traffic.js`:
+Для наглядной демонстрации динамики изменения индикаторов на компактном 5-панельном дашборде Grafana ([http://localhost:3001](http://localhost:3001)) подготовлен скрипт `simulate_slo_traffic.js`:
 ```powershell
 node simulate_slo_traffic.js
 ```
 
-Сценарий последовательно проходит 4 калиброванные фазы:
+Сценарий последовательно проходит 5 калиброванных фаз:
 1. **Фаза 1: Штатный режим (20 сек)** — 100% успешных запросов:
-   * SLI 1 = 100%, Error Budget = 100%, SLI 3 (Пробер) = 100%.
-2. **Фаза 2: Контролируемая нагрузка (25 сек)** — 2.5% ошибок:
-   * SLI 1 опускается до ~97.5% (нарушен SLO 99%, но сохранен SLA 95%);
-   * Error Budget плавно снижается со 100% до ~50% (демонстрация постепенного расхода бюджета ошибок).
-3. **Фаза 3: Выразительный критический сбой (30 сек)** — 80% ошибок + программный сбой пробера (`/fail`):
-   * SLI 1 глубоко падает до ~20% (красная зона, существенное нарушение SLA);
-   * SLI 3 (Пробер) падает до 0%;
-   * Error Budget сгорает ровно до 0% (исчерпан, линия на 0%, без ухода в минус).
-4. **Фаза 4: Полное восстановление (25 сек)** — вызов `/recover` на пробере и прекращение ошибок:
-   * Все показатели SLI и остаток бюджета плавно и синхронно возвращаются к 100%.
+   * Все индикаторы SLI в зелёной зоне выше SLO, Error Budget = 100%, SLA соблюдается.
+2. **Фаза 2: Деградация времени отклика (Latency, 20 сек)** — вызов `/delay` (350 мс > норматива 200 мс):
+   * `SLI 2` опускается ниже порога SLO (95.0%), при этом `SLI 1` (доступность) остаётся на 100%; в конце фазы вызывается `/nodelay`.
+3. **Фаза 3: Контролируемый расход бюджета ошибок (25 сек)** — умеренный поток ошибок (`~2.5%`):
+   * Нарушается внутренний инженерный SLO (99.0%), Error Budget тает на графике, демонстрируя буфер безопасности до нарушения клиентского SLA (95.0%).
+4. **Фаза 4: Критический сбой и авария (25 сек)** — 80% ошибок + перевод пробера в отказ (`/fail`):
+   * `SLI 1` и `SLI 3` падают в аварийную зону, Error Budget падает до 0% (сигнал к Feature Freeze), интегральный показатель соблюдения SLA опускается ниже 95.0%.
+5. **Фаза 5: Полное восстановление (20 сек)** — вызов `/recover` и `/nodelay` на пробере, 100% штатного трафика:
+   * Все индикаторы SLI, Error Budget и SLA возвращаются в штатную зелёную зону.
 
 ---
 
