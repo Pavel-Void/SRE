@@ -1,4 +1,8 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { execSync } = require('child_process');
 
 const BACKEND_HOST = process.env.TARGET_HOST || '127.0.0.1';
 const BACKEND_PORT = parseInt(process.env.TARGET_PORT || '8080', 10);
@@ -194,42 +198,117 @@ async function triggerAuthFailures(count = 40) {
   console.log('    Через ~15-20 секунд алерт "HighAuthFailureRate" перейдет в FIRING.');
 }
 
+function setJvmThreshold(percent, forceRestart = false) {
+  try {
+    if (!forceRestart) {
+      const current = execSync('kubectl get configmap alert-rules -o "jsonpath={.data[\'alerts\\.yaml\']}"', { encoding: 'utf8' });
+      const curMatch = current.match(/jvm_memory_max_bytes\{area="heap"\} > 0\)\) \* 100 > (\d+)/);
+      if (curMatch && parseInt(curMatch[1], 10) === percent) {
+        return false; // уже нужный порог
+      }
+    }
+    const raw = fs.readFileSync(path.join(__dirname, 'k8s', '11-alert-rules.yaml'), 'utf8');
+    const match = raw.match(/alerts\.yaml:\s*\|\r?\n([\s\S]+)$/);
+    if (!match) throw new Error('Не найден блок alerts.yaml в k8s/11-alert-rules.yaml');
+
+    const alertsBody = match[1]
+      .split(/\r?\n/)
+      .map(l => l.replace(/^    /, ''))
+      .join('\n')
+      .replace(/(jvm_memory_max_bytes\{area="heap"\} > 0\)\) \* 100 > )\d+/, `$1${percent}`);
+
+    const tmpPath = path.join(os.tmpdir(), 'park-psu-alerts.yaml');
+    fs.writeFileSync(tmpPath, alertsBody, 'utf8');
+
+    execSync(`kubectl create configmap alert-rules --from-file=alerts.yaml="${tmpPath}" -o yaml --dry-run=client | kubectl apply -f -`, { stdio: 'pipe' });
+    execSync('kubectl rollout restart deployment/vmalert && kubectl rollout status deployment/vmalert --timeout=45s', { stdio: 'pipe' });
+    return true;
+  } catch (e) {
+    console.log(`    [!] Не удалось переключить порог JVM через kubectl: ${e.message}`);
+    return false;
+  }
+}
+
+async function triggerJvmFail() {
+  console.log('>>> [СИМУЛЯЦИЯ АЛЕРТА: JvmHeapMemoryUsageHigh]');
+  console.log('    Временно снижаю порог JVM Heap в кластере до > 25% (боевой порог в файле остается 80%)...');
+  const restarted = setJvmThreshold(25, true);
+  if (restarted) {
+    console.log('    [!] Тестовый порог > 25% активирован в vmalert.');
+    console.log('    Через ~15-20 секунд сработает алерт "JvmHeapMemoryUsageHigh" на метрику Spring Actuator!');
+  }
+}
+
+async function triggerJvmRecover() {
+  console.log('>>> [ВОССТАНОВЛЕНИЕ ПОРОГА: JvmHeapMemoryUsageHigh]');
+  const restarted = setJvmThreshold(80, false);
+  if (restarted) {
+    console.log('    [OK] Возвращен боевой порог JVM Heap (> 80%).');
+    console.log('    Через ~15-20 секунд придет уведомление RESOLVED для JvmHeapMemoryUsageHigh.');
+  } else {
+    console.log('    [OK] Боевой порог JVM Heap (> 80%) уже активен.');
+  }
+}
+
+async function triggerAllRecover() {
+  await triggerProberRecover();
+  await triggerJvmRecover();
+}
+
 async function runDemo() {
   console.log('========================================================================');
-  console.log('  ПОЛНЫЙ СКВОЗНОЙ ДЕМО-СЦЕНАРИЙ ДЛЯ СКРИНШОТОВ И ПРОВЕРКИ АЛЕРТОВ');
+  console.log('  ПОЛНЫЙ СКВОЗНОЙ ДЕМО-СЦЕНАРИЙ (СБОЙ -> АЛЕРТЫ -> АВТОВОССТАНОВЛЕНИЕ)');
   console.log('========================================================================\n');
 
-  console.log('1. Проверка исходного состояния (все алерты должны быть INACTIVE)...');
+  console.log('1. Подготовка исходного состояния (пробер и боевой порог JVM 80%)...');
   await triggerProberRecover();
-  await sleep(2000);
+  setJvmThreshold(80, false);
+  await sleep(3000);
   await getStatus();
 
-  console.log('2. Запуск симуляции инцидентов:');
-  console.log('   -> Имитация отказа сервиса в Пробере (ProberServiceDown)');
+  console.log('2. Фаза сбоев — запуск инцидентов:');
+  await triggerJvmFail();
   await triggerProberFail();
-
-  console.log('   -> Серия неудачных авторизаций (HighAuthFailureRate)');
   await triggerAuthFailures(45);
-
-  console.log('   -> Поток HTTP ошибок для превышения порога 5% (HighHttpErrorRate)');
   await triggerHttpErrors(25);
 
-  console.log('\n3. Ожидание оценки правил vmalert и доставки в Alertmanager (30 секунд)...');
+  console.log('\n3. Ожидание оценки правил vmalert и доставки FIRING в Alertmanager (25 секунд)...');
+  for (let s = 25; s > 0; s -= 5) {
+    console.log(`   Осталось ${s} секунд...`);
+    await sleep(5000);
+  }
+
+  console.log('\n4. Фиксация активных сработавших алертов (FIRING):');
+  await getStatus();
+
+  console.log('========================================================================');
+  console.log('  АЛЕРТЫ АКТИВНЫ (FIRING)! Можно посмотреть в браузере:');
+  console.log('  1. Webhook Receiver UI:     http://localhost:5001');
+  console.log('  2. Alertmanager Web UI:     http://localhost:9093');
+  console.log('  Пауза 15 секунд перед автоматическим восстановлением...');
+  console.log('========================================================================\n');
+  await sleep(15000);
+
+  console.log('5. Фаза автоматического восстановления всех сервисов и порогов...');
+  await triggerAllRecover();
+
+  console.log('\n6. Генерация штатного трафика (200 OK) и ожидание уведомлений RESOLVED (55 секунд)...');
+  const recEnd = Date.now() + 25000;
+  while (Date.now() < recEnd) {
+    const batch = [];
+    for (let i = 0; i < 25; i++) batch.push(sendHttp(BACKEND_PORT, '/actuator/health'));
+    await Promise.all(batch);
+    process.stdout.write('.');
+    await sleep(250);
+  }
+  console.log('\n   Штатный трафик отправлен, дожидаемся закрытия алертов в Alertmanager (30 секунд)...');
   for (let s = 30; s > 0; s -= 5) {
     console.log(`   Осталось ${s} секунд...`);
     await sleep(5000);
   }
 
-  console.log('\n4. Фиксация сработавших алертов (FIRING):');
+  console.log('\n7. Финальное состояние системы после восстановления:');
   await getStatus();
-
-  console.log('========================================================================');
-  console.log('  СЕЙЧАС АЛЕРТЫ АКТИВНЫ (FIRING)! ВЫ МОЖЕТЕ СДЕЛАТЬ СКРИНШОТЫ:');
-  console.log('  1. Alertmanager Web UI:     http://localhost:9093');
-  console.log('  2. Webhook Receiver UI:     http://localhost:5001');
-  console.log('  3. vmalert Rules UI:        http://localhost:8880');
-  console.log('========================================================================\n');
-  console.log('Для восстановления штатного режима запустите: node trigger_alerts.js recover');
 }
 
 async function main() {
@@ -246,7 +325,16 @@ async function main() {
     case 'prober-fail':
       await triggerProberFail();
       break;
+    case 'jvm':
+    case 'jvm-fail':
+      await triggerJvmFail();
+      break;
+    case 'jvm-recover':
+      await triggerJvmRecover();
+      break;
     case 'recover':
+      await triggerAllRecover();
+      break;
     case 'prober-recover':
       await triggerProberRecover();
       break;
@@ -256,7 +344,7 @@ async function main() {
       break;
     case 'auth':
     case 'auth-failures':
-      const cnt = parseInt(process.argv[3] || '40', 10);
+      const cnt = parseInt(process.argv[3] || '45', 10);
       await triggerAuthFailures(cnt);
       break;
     case 'demo':
@@ -266,9 +354,11 @@ async function main() {
       console.log(`Неизвестная команда: ${cmd}`);
       console.log('Доступные команды:');
       console.log('  node trigger_alerts.js status          - проверить текущий статус алертов');
-      console.log('  node trigger_alerts.js demo            - запустить полный сценарий сработки');
+      console.log('  node trigger_alerts.js metrics         - значения метрик в VictoriaMetrics');
+      console.log('  node trigger_alerts.js demo            - полный сценарий: сбой -> FIRING -> автовосстановление -> RESOLVED');
       console.log('  node trigger_alerts.js prober-fail     - вызвать отказ пробера (ProberServiceDown)');
-      console.log('  node trigger_alerts.js prober-recover  - восстановить пробер');
+      console.log('  node trigger_alerts.js jvm-fail        - активировать демо-порог JVM (25%) для JvmHeapMemoryUsageHigh');
+      console.log('  node trigger_alerts.js recover         - восстановить пробер и вернуть боевой порог JVM (80%)');
       console.log('  node trigger_alerts.js http-errors     - сгенерировать поток ошибок API');
       console.log('  node trigger_alerts.js auth-failures   - сгенерировать всплеск ошибок входа');
       break;

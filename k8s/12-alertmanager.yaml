@@ -12,7 +12,7 @@ data:
       group_by: ['alertname', 'severity']
       group_wait: 5s
       group_interval: 10s
-      repeat_interval: 1h
+      repeat_interval: 2m
       receiver: 'webhook-logger'
 
     receivers:

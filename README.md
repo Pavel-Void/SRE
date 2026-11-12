@@ -258,7 +258,7 @@ node simulate_slo_traffic.js
 | **HighHttpErrorRate** | Critical | Сервис (API) | Ошибки API > 5% за 1 мин | Превышение допустимого порога SLA, исчерпание Error Budget |
 | **ProberServiceDown** | Critical | Сервис (Пробер) | `probe_success == 0` > 20 сек | Полная функциональная или сетевая недоступность бэкенда |
 | **HighAuthFailureRate** | Warning | Сервис (Auth) | Неудачный вход > 0.5 оп/сек | Аномальный всплеск ошибок входа / brute-force атака |
-| **JvmHeapMemoryUsageHigh** | Warning | Рантайм (Actuator) | JVM Heap > 25% (демо) / 80% (prod) | Риск отказа JVM-процесса по OutOfMemoryError |
+| **JvmHeapMemoryUsageHigh** | Warning | Рантайм (Actuator) | JVM Heap > 80% (в `demo` временно > 25%) | Риск отказа JVM-процесса по OutOfMemoryError |
 | **HikariPoolExhaustion** | Critical | Рантайм (HikariCP) | Pending потоки > 0 или утилизация > 80% | Дефицит соединений пула БД, зависание транзакций |
 
 ### 7.3. Управление и проверка алертов
@@ -269,6 +269,6 @@ node trigger_alerts.js status
 # Просмотр реальных метрик из VictoriaMetrics
 node trigger_alerts.js metrics
 
-# Запуск полного сценария проверки для скриншотов
+# Полный сквозной сценарий: инциденты (включая JVM) -> FIRING -> автовосстановление -> RESOLVED
 node trigger_alerts.js demo
 ```

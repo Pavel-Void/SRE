@@ -47,6 +47,8 @@ data:
                 component: a.labels?.component || 'system',
                 summary: a.annotations?.summary || 'No summary',
                 description: a.annotations?.description || 'No description',
+                resolvedSummary: a.annotations?.resolved_summary || '',
+                resolvedDescription: a.annotations?.resolved_description || '',
                 startsAt: a.startsAt,
                 endsAt: a.endsAt,
                 labels: a.labels || {},
@@ -108,9 +110,13 @@ data:
         .stat-firing { color: #ef4444; }
         .stat-resolved { color: #22c55e; }
         .stat-total { color: #94a3b8; }
-        .alert-card { background: #1e293b; border-radius: 8px; border-left: 6px solid #64748b; margin-bottom: 14px; padding: 16px 20px; border-top: 1px solid #334155; border-right: 1px solid #334155; border-bottom: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); transition: all 0.2s ease; }
+        .alert-card { background: #1e293b; border-radius: 8px; border-left: 6px solid #64748b; margin-bottom: 14px; padding: 16px 20px; border-top: 1px solid #334155; border-right: 1px solid #334155; border-bottom: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); transition: opacity 0.25s ease, filter 0.25s ease, transform 0.2s ease; }
         .alert-firing { border-left-color: #ef4444; }
+        .alert-active-now { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.45), 0 8px 18px rgba(0, 0, 0, 0.4); background: #1e293b; }
         .alert-resolved { border-left-color: #22c55e; }
+        .alert-historical { opacity: 0.45; filter: saturate(0.65); }
+        .alert-historical:hover { opacity: 0.92; filter: saturate(1); }
+        .ref-cause { font-size: 12px; color: #64748b; margin-bottom: 8px; padding-left: 8px; border-left: 2px solid #334155; }
         .alert-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
         .badge { padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
         .badge-firing { background: #7f1d1d; color: #fca5a5; border: 1px solid #b91c1c; }
@@ -187,6 +193,26 @@ data:
           }
         }
 
+        // Безопасное экранирование HTML
+        function escapeHtml(str) {
+          return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        }
+
+        // Вычисление длительности инцидента (endsAt - startsAt)
+        function formatDuration(startIso, endIso) {
+          if (!startIso || !endIso || endIso.startsWith('0001-01-01')) return null;
+          const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+          if (isNaN(ms) || ms < 0) return null;
+          const totalSec = Math.round(ms / 1000);
+          const mins = Math.floor(totalSec / 60);
+          const secs = totalSec % 60;
+          return mins > 0 ? (mins + ' мин ' + secs + ' сек') : (secs + ' сек');
+        }
+
         async function clearAlerts() {
           try {
             await fetch('/api/clear', { method: 'POST' });
@@ -202,15 +228,15 @@ data:
             if (!res.ok) return;
             const alerts = await res.json();
 
-            // Вычисляем текущее состояние каждого уникального алерта по его последнему событию (alerts отсортированы от новых к старым)
+            // Вычисляем актуальное состояние каждого уникального алерта по его последнему (самому верхнему) событию
             const latestByAlert = new Map();
             for (const a of alerts) {
               const key = a.alertname + '|' + (a.labels?.instance || '') + '|' + (a.component || '');
               if (!latestByAlert.has(key)) {
-                latestByAlert.set(key, a.status);
+                latestByAlert.set(key, { status: a.status, id: a.id });
               }
             }
-            const activeFiring = Array.from(latestByAlert.values()).filter(s => s === 'firing').length;
+            const activeFiring = Array.from(latestByAlert.values()).filter(v => v.status === 'firing').length;
             const resolved = alerts.filter(a => a.status === 'resolved').length;
 
             document.getElementById('count-firing').textContent = activeFiring;
@@ -220,32 +246,54 @@ data:
             const listEl = document.getElementById('alerts-list');
 
             if (alerts.length === 0) {
-              listEl.innerHTML = '<div class="empty"><p>Уведомлений пока нет. Система ожидает сработки алертов от Alertmanager.</p><p style="margin-top:8px; font-size:13px;">Запустите <code>node trigger_alerts.js prober-fail</code> для генерации инцидента.</p></div>';
+              listEl.innerHTML = '<div class="empty"><p>Уведомлений пока нет. Система ожидает сработки алертов от Alertmanager.</p><p style="margin-top:8px; font-size:13px;">Запустите <code>node trigger_alerts.js demo</code> для демонстрации инцидентов и восстановления.</p></div>';
               return;
             }
 
             let html = '';
             for (const a of alerts) {
               const isFiring = a.status === 'firing';
+              const key = a.alertname + '|' + (a.labels?.instance || '') + '|' + (a.component || '');
+              const latest = latestByAlert.get(key);
+              const isActiveNow = isFiring && latest && latest.status === 'firing' && latest.id === a.id;
+
               const receivedFormatted = formatLocalTime(a.receivedAt) || 'N/A';
               const startsFormatted = formatLocalTime(a.startsAt);
               const endsFormatted = formatLocalTime(a.endsAt);
+              const durationStr = !isFiring ? formatDuration(a.startsAt, a.endsAt) : null;
 
-              html += '<div class="alert-card ' + (isFiring ? 'alert-firing' : 'alert-resolved') + '">';
+              const titleText = isFiring
+                ? a.summary
+                : (a.resolvedSummary || ('Инцидент устранён: ' + a.summary));
+              const bodyText = isFiring
+                ? a.description
+                : (a.resolvedDescription || 'Метрика вернулась в допустимые пределы. Инцидент закрыт.');
+
+              const cardClasses = [
+                'alert-card',
+                isFiring ? 'alert-firing' : 'alert-resolved',
+                isActiveNow ? 'alert-active-now' : 'alert-historical'
+              ].join(' ');
+
+              html += '<div class="' + cardClasses + '">';
               html += '  <div class="alert-head">';
               html += '    <div style="display:flex; align-items:center; gap:10px;">';
-              html += '      <span class="badge ' + (isFiring ? 'badge-firing' : 'badge-resolved') + '">' + a.status + '</span>';
-              html += '      <span class="badge ' + (a.severity === 'critical' ? 'badge-critical' : 'badge-warning') + '">' + a.severity + '</span>';
-              html += '      <span class="alert-name">' + a.alertname + '</span>';
+              html += '      <span class="badge ' + (isFiring ? 'badge-firing' : 'badge-resolved') + '">' + escapeHtml(a.status) + '</span>';
+              html += '      <span class="badge ' + (a.severity === 'critical' ? 'badge-critical' : 'badge-warning') + '">' + escapeHtml(a.severity) + '</span>';
+              html += '      <span class="alert-name">' + escapeHtml(a.alertname) + '</span>';
               html += '    </div>';
               html += '    <span class="alert-time">' + receivedFormatted + '</span>';
               html += '  </div>';
-              html += '  <div class="summary">' + a.summary + '</div>';
-              html += '  <div class="desc">' + a.description + '</div>';
+              html += '  <div class="summary">' + escapeHtml(titleText) + '</div>';
+              html += '  <div class="desc">' + escapeHtml(bodyText) + '</div>';
+              if (!isFiring && a.description) {
+                html += '  <div class="ref-cause"><b>Исходный триггер сбоя:</b> ' + escapeHtml(a.description) + '</div>';
+              }
               html += '  <div class="meta">';
-              html += '    <span><b>Компонент:</b> ' + a.component + '</span>';
+              html += '    <span><b>Компонент:</b> ' + escapeHtml(a.component) + '</span>';
               if (startsFormatted) html += '    <span><b>Старт:</b> ' + startsFormatted + '</span>';
-              if (!isFiring && endsFormatted) html += '    <span><b>Конец:</b> ' + endsFormatted + '</span>';
+              if (!isFiring && endsFormatted) html += '    <span><b>Восстановлен:</b> ' + endsFormatted + '</span>';
+              if (durationStr) html += '    <span><b>Длительность:</b> ' + durationStr + '</span>';
               html += '  </div>';
               html += '</div>';
             }
@@ -271,8 +319,59 @@ data:
       res.end('Not Found');
     });
 
+    // Подтягиваем уже активные алерты из Alertmanager при старте пода (если они сработали до перезапуска)
+    function syncFromAlertmanager() {
+      const amHost = process.env.ALERTMANAGER_HOST || 'alertmanager.default.svc.cluster.local';
+      const amPort = parseInt(process.env.ALERTMANAGER_PORT || '9093', 10);
+      http.get({ hostname: amHost, port: amPort, path: '/api/v2/alerts', timeout: 3000 }, (res) => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => {
+          try {
+            const items = JSON.parse(d);
+            for (const a of items) {
+              if (a.status?.state === 'active') {
+                const name = a.labels?.alertname || 'Unnamed';
+                const inst = a.labels?.instance || '';
+                const exists = alertHistory.some(h => h.alertname === name && (h.labels?.instance || '') === inst && h.status === 'firing');
+                if (!exists) {
+                  alertHistory.unshift({
+                    id: Math.random().toString(36).substring(2, 9),
+                    receivedAt: a.startsAt || new Date().toISOString(),
+                    status: 'firing',
+                    alertname: name,
+                    severity: a.labels?.severity || 'info',
+                    component: a.labels?.component || 'system',
+                    summary: a.annotations?.summary || 'No summary',
+                    description: a.annotations?.description || 'No description',
+                    resolvedSummary: a.annotations?.resolved_summary || '',
+                    resolvedDescription: a.annotations?.resolved_description || '',
+                    startsAt: a.startsAt,
+                    endsAt: a.endsAt,
+                    labels: a.labels || {},
+                    annotations: a.annotations || {}
+                  });
+                }
+              }
+            }
+            console.log(`Synced active alerts from Alertmanager: ${alertHistory.length}`);
+          } catch (e) {
+            console.log('Sync from Alertmanager parse warning:', e.message);
+          }
+        });
+      }).on('error', (e) => {
+        console.log('Sync from Alertmanager skipped:', e.message);
+      });
+    }
+
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`Alert Webhook Receiver listening on port ${PORT} (TZ: ${process.env.TZ})`);
+      setTimeout(syncFromAlertmanager, 2500);
+    });
+
+    process.on('SIGTERM', () => {
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 500);
     });
 ---
 apiVersion: apps/v1
