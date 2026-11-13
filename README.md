@@ -272,3 +272,38 @@ node trigger_alerts.js metrics
 # Полный сквозной сценарий: инциденты (включая JVM) -> FIRING -> автовосстановление -> RESOLVED
 node trigger_alerts.js demo
 ```
+
+---
+
+## 8. Мониторинг в Grafana: Комплексные дашборды (RED, USE, SLA Пробера и PostgreSQL)
+
+В рамках домашнего задания №7 реализована единая система визуализации на базе **Grafana OSS 11.1.0** (порт [http://localhost:3001](http://localhost:3001), логин: `admin`, пароль: `admin`) с автоматическим GitOps-провижинингом источников данных и дашбордов (подробный разбор и скриншоты см. в [`Отчёт_7.md`](Отчёт_7.md)):
+
+### 8.1. Состав настроенных дашбордов
+
+1. **`Park PSU - Обзор приложения (RED & USE) и SLA Пробера` (файл [`app_dashboard.json`](app_dashboard.json)):**
+   * **Выделенная панель SLA Пробера (3 балла):** круговой Gauge, непрерывно вычисляющий кумулятивную доступность сервиса внешним синтетическим зондом (`/actuator/health`) за 30-минутное окно:
+     $$\text{Prober SLA} = \operatorname{clamp}\left(\operatorname{avg}\left(\operatorname{avg\_over\_time}(\texttt{app\_prober\_probe\_success}\{\texttt{target}="health"\}[30m])\right) \times 100, 0, 100\right)$$
+   * **Golden Signals:** верхнеуровневые карточки суммарного RPS (`rate count[1m]`), доли ошибок API (4xx/5xx %), средней задержки отклика и перцентиля P99 Latency.
+   * **Методология RED (6 баллов):**
+     * *Rate:* интенсивность запросов по REST-эндпоинтам и HTTP-методам.
+     * *Errors:* распределение кодов ответов 2xx, 4xx, 5xx (stacked time series).
+     * *Duration:* перцентили времени обработки запросов (p50 медиана, p95, p99).
+   * **Методология USE (Рантайм JVM и ресурсы):**
+     * *JVM Memory:* утилизация Heap (Used vs Committed vs Max Limit) и Non-Heap (Metaspace / CodeCache).
+     * *Garbage Collection:* длительность пауз Stop-The-World (мс/с) и частота циклов сборки мусора.
+     * *JVM Threads & CPU:* количество живых/фоновых потоков и процент утилизации процессора (`process_cpu_usage`).
+     * *HikariCP Connection Pool:* занятые и свободные соединения в пуле, очередь ожидающих потоков (`pending threads`) и задержка получения соединения (`acquire latency`).
+
+2. **`PostgreSQL Database (Exporter 9628)` (файл [`postgres_dashboard.json`](postgres_dashboard.json), 1 балл):**
+   * Официальный дашборд PostgreSQL Exporter (Community ID 9628), адаптированный для работы с VictoriaMetrics TSDB.
+   * Отображает: аптайм СУБД, физический размер базы `park_psu`, интенсивность транзакций (TPS Commit/Rollback), коэффициент попадания в буферный кэш (Cache Hit Rate > 99%), активные/простаивающие сессии, блокировки и статистику чтения/записи кортежей.
+
+3. **`Park PSU - SRE Мониторинг SLI / SLO / SLA` (из ДЗ №5):**
+   * Мониторинг соблюдения внутренних инженерных SLO (99.0%), динамика остатка бюджета ошибок (Error Budget Remaining) и договорного SLA (95.0%).
+
+### 8.2. Экспортированные артефакты
+* [`app_dashboard.json`](app_dashboard.json) — экспортированный дашборд приложения.
+* [`postgres_dashboard.json`](postgres_dashboard.json) — экспортированный дашборд PostgreSQL Exporter.
+* [`Отчёт_7.md`](Отчёт_7.md) — подробный отчёт с описанием метрик, источников данных и пошаговым сценарием скринкаста.
+

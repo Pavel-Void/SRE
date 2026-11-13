@@ -27,12 +27,19 @@ data:
     datasources:
       - name: VictoriaMetrics
         type: prometheus
+        uid: VictoriaMetrics
         access: proxy
         url: http://vm-single-victoria-metrics-single-server.monitoring.svc.cluster.local:8428
         isDefault: true
         jsonData:
           httpMethod: POST
           timeInterval: 5s
+      - name: VictoriaLogs
+        type: victoriametrics-logs-datasource
+        access: proxy
+        url: http://victoria-logs.default.svc.cluster.local:9428
+        isDefault: false
+        jsonData: {}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -91,6 +98,12 @@ spec:
             - name: slo-dashboard
               mountPath: /var/lib/grafana/dashboards/slo-dashboard.json
               subPath: slo-dashboard.json
+            - name: app-dashboard
+              mountPath: /var/lib/grafana/dashboards/app-dashboard.json
+              subPath: app-dashboard.json
+            - name: postgres-dashboard
+              mountPath: /var/lib/grafana/dashboards/postgres-dashboard.json
+              subPath: postgres-dashboard.json
           resources:
             requests:
               cpu: 100m
@@ -114,6 +127,12 @@ spec:
         - name: slo-dashboard
           configMap:
             name: grafana-dashboard-slo
+        - name: app-dashboard
+          configMap:
+            name: grafana-dashboard-app
+        - name: postgres-dashboard
+          configMap:
+            name: grafana-dashboard-postgres
 ---
 apiVersion: v1
 kind: Service
