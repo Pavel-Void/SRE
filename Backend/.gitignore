@@ -41,4 +41,7 @@ out/
 .env.local
 *.properties.local
 liquibase.properties
+app.jar
+*.jar
+
 
