@@ -1,0 +1,89 @@
+﻿=== СТРАТЕГИЯ: CANARY ===
+
+21 ноября 2026 г. 1:14:09
+
+
+service/backend-v1 created
+deployment.apps/backend-v1 created
+service/backend-v2 created
+deployment.apps/backend-v2 created
+Waiting for deployment "backend-v1" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "backend-v1" rollout to finish: 1 of 2 updated replicas are available...
+deployment "backend-v1" successfully rolled out
+deployment "backend-v2" successfully rolled out
+--- CANARY ШАГ 1: 90/10 ---
+httproute.gateway.networking.k8s.io/backend created
+01:15:08 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:08 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:08 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:09 | [90/10] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:09 | [90/10] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:09 | [90/10] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:09 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:10 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:10 | [90/10] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:10 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:10 | [90/10] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:10 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:11 | [90/10] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:11 | [90/10] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:11 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:11 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:12 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:12 | [90/10] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:12 | [90/10] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:12 | [90/10] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:13 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:13 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:13 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:13 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:13 | [90/10] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+--- CANARY ШАГ 2: 50/50 ---
+httproute.gateway.networking.k8s.io/backend configured
+01:15:16 | [50/50] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:16 | [50/50] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:16 | [50/50] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:17 | [50/50] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:17 | [50/50] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:17 | [50/50] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:17 | [50/50] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:18 | [50/50] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:18 | [50/50] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:18 | [50/50] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:18 | [50/50] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:18 | [50/50] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:19 | [50/50] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:19 | [50/50] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:19 | [50/50] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:19 | [50/50] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+01:15:20 | [50/50] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:20 | [50/50] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:20 | [50/50] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:20 | [50/50] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:21 | [50/50] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:21 | [50/50] Host: backend-v1-6c76fc65dc-zcwxw, Version: v1.0.0
+01:15:21 | [50/50] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:21 | [50/50] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:21 | [50/50] Host: backend-v1-6c76fc65dc-xh7tl, Version: v1.0.0
+--- CANARY ШАГ 3: 0/100 ---
+httproute.gateway.networking.k8s.io/backend configured
+01:15:24 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:24 | [0/100] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:24 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:25 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:25 | [0/100] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:25 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:25 | [0/100] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:25 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:26 | [0/100] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:26 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:26 | [0/100] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:26 | [0/100] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:27 | [0/100] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:27 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:27 | [0/100] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:27 | [0/100] Host: backend-v2-5c55887dd7-fgjw9, Version: v2.0.0
+01:15:27 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:28 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:28 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0
+01:15:28 | [0/100] Host: backend-v2-5c55887dd7-blkfb, Version: v2.0.0

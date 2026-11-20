@@ -1,0 +1,36 @@
+﻿=== СТРАТЕГИЯ: A/B TESTING ===
+
+21 ноября 2026 г. 1:15:30
+
+
+service/backend-v1 created
+deployment.apps/backend-v1 created
+service/backend-v2 created
+deployment.apps/backend-v2 created
+Waiting for deployment "backend-v1" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "backend-v1" rollout to finish: 1 of 2 updated replicas are available...
+deployment "backend-v1" successfully rolled out
+deployment "backend-v2" successfully rolled out
+httproute.gateway.networking.k8s.io/backend created
+--- ОБЫЧНЫЙ ТРАФИК (БЕЗ ЗАГОЛОВКА) -> v1 ---
+01:16:29 | [Обычный] Host: backend-v1-6c76fc65dc-g67mh, Version: v1.0.0
+01:16:29 | [Обычный] Host: backend-v1-6c76fc65dc-g67mh, Version: v1.0.0
+01:16:30 | [Обычный] Host: backend-v1-6c76fc65dc-9smjv, Version: v1.0.0
+01:16:30 | [Обычный] Host: backend-v1-6c76fc65dc-9smjv, Version: v1.0.0
+01:16:30 | [Обычный] Host: backend-v1-6c76fc65dc-9smjv, Version: v1.0.0
+01:16:30 | [Обычный] Host: backend-v1-6c76fc65dc-9smjv, Version: v1.0.0
+01:16:31 | [Обычный] Host: backend-v1-6c76fc65dc-9smjv, Version: v1.0.0
+01:16:31 | [Обычный] Host: backend-v1-6c76fc65dc-g67mh, Version: v1.0.0
+01:16:31 | [Обычный] Host: backend-v1-6c76fc65dc-g67mh, Version: v1.0.0
+01:16:31 | [Обычный] Host: backend-v1-6c76fc65dc-9smjv, Version: v1.0.0
+--- БЕТА-ТРАФИК (С ЗАГОЛОВКОМ x-user-group: beta) -> v2 ---
+01:16:32 | [Beta Header] Host: backend-v2-5c55887dd7-cqntz, Version: v2.0.0
+01:16:32 | [Beta Header] Host: backend-v2-5c55887dd7-g8f9n, Version: v2.0.0
+01:16:32 | [Beta Header] Host: backend-v2-5c55887dd7-cqntz, Version: v2.0.0
+01:16:32 | [Beta Header] Host: backend-v2-5c55887dd7-cqntz, Version: v2.0.0
+01:16:32 | [Beta Header] Host: backend-v2-5c55887dd7-cqntz, Version: v2.0.0
+01:16:33 | [Beta Header] Host: backend-v2-5c55887dd7-g8f9n, Version: v2.0.0
+01:16:33 | [Beta Header] Host: backend-v2-5c55887dd7-g8f9n, Version: v2.0.0
+01:16:33 | [Beta Header] Host: backend-v2-5c55887dd7-cqntz, Version: v2.0.0
+01:16:33 | [Beta Header] Host: backend-v2-5c55887dd7-cqntz, Version: v2.0.0
+01:16:34 | [Beta Header] Host: backend-v2-5c55887dd7-g8f9n, Version: v2.0.0

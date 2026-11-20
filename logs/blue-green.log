@@ -1,0 +1,54 @@
+﻿=== СТРАТЕГИЯ: BLUE / GREEN ===
+
+21 ноября 2026 г. 1:12:57
+
+
+service/backend-v1 created
+deployment.apps/backend-v1 created
+service/backend-v2 created
+deployment.apps/backend-v2 created
+Waiting for deployment "backend-v1" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "backend-v1" rollout to finish: 1 of 2 updated replicas are available...
+deployment "backend-v1" successfully rolled out
+Waiting for deployment "backend-v2" rollout to finish: 1 of 2 updated replicas are available...
+deployment "backend-v2" successfully rolled out
+httproute.gateway.networking.k8s.io/backend created
+01:13:57 | [GREEN v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:13:57 | [GREEN v1] Host: backend-v1-6c76fc65dc-xv8zm, Version: v1.0.0
+01:13:57 | [GREEN v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:13:57 | [GREEN v1] Host: backend-v1-6c76fc65dc-xv8zm, Version: v1.0.0
+01:13:58 | [GREEN v1] Host: backend-v1-6c76fc65dc-xv8zm, Version: v1.0.0
+01:13:58 | [GREEN v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:13:58 | [GREEN v1] Host: backend-v1-6c76fc65dc-xv8zm, Version: v1.0.0
+01:13:58 | [GREEN v1] Host: backend-v1-6c76fc65dc-xv8zm, Version: v1.0.0
+01:13:58 | [GREEN v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:13:59 | [GREEN v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+--- ПЕРЕКЛЮЧЕНИЕ НА BLUE (v2) ---
+httproute.gateway.networking.k8s.io/backend configured
+01:14:00 | [BLUE v2] Host: backend-v2-5c55887dd7-lkjj4, Version: v2.0.0
+01:14:00 | [BLUE v2] Host: backend-v2-5c55887dd7-6pwvt, Version: v2.0.0
+01:14:01 | [BLUE v2] Host: backend-v2-5c55887dd7-lkjj4, Version: v2.0.0
+01:14:01 | [BLUE v2] Host: backend-v2-5c55887dd7-6pwvt, Version: v2.0.0
+01:14:01 | [BLUE v2] Host: backend-v2-5c55887dd7-6pwvt, Version: v2.0.0
+01:14:01 | [BLUE v2] Host: backend-v2-5c55887dd7-6pwvt, Version: v2.0.0
+01:14:02 | [BLUE v2] Host: backend-v2-5c55887dd7-6pwvt, Version: v2.0.0
+01:14:02 | [BLUE v2] Host: backend-v2-5c55887dd7-lkjj4, Version: v2.0.0
+01:14:02 | [BLUE v2] Host: backend-v2-5c55887dd7-lkjj4, Version: v2.0.0
+01:14:02 | [BLUE v2] Host: backend-v2-5c55887dd7-lkjj4, Version: v2.0.0
+01:14:02 | [BLUE v2] Host: backend-v2-5c55887dd7-lkjj4, Version: v2.0.0
+01:14:03 | [BLUE v2] Host: backend-v2-5c55887dd7-6pwvt, Version: v2.0.0
+01:14:03 | [BLUE v2] Host: backend-v2-5c55887dd7-6pwvt, Version: v2.0.0
+01:14:03 | [BLUE v2] Host: backend-v2-5c55887dd7-6pwvt, Version: v2.0.0
+01:14:03 | [BLUE v2] Host: backend-v2-5c55887dd7-6pwvt, Version: v2.0.0
+--- МГНОВЕННЫЙ ОТКАТ НА GREEN (v1) ---
+httproute.gateway.networking.k8s.io/backend configured
+01:14:05 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:14:05 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:14:05 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:14:05 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:14:06 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-xv8zm, Version: v1.0.0
+01:14:06 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-xv8zm, Version: v1.0.0
+01:14:06 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:14:06 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-kvlt7, Version: v1.0.0
+01:14:07 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-xv8zm, Version: v1.0.0
+01:14:07 | [ROLLBACK v1] Host: backend-v1-6c76fc65dc-xv8zm, Version: v1.0.0
