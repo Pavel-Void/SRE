@@ -1,0 +1,86 @@
+﻿=== СТРАТЕГИЯ: ROLLING UPDATE ===
+
+21 ноября 2026 г. 1:09:43
+
+
+service/backend created
+deployment.apps/backend created
+httproute.gateway.networking.k8s.io/backend created
+Waiting for deployment "backend" rollout to finish: 0 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 0 of 4 updated replicas are available...
+Waiting for deployment "backend" rollout to finish: 1 of 4 updated replicas are available...
+Waiting for deployment "backend" rollout to finish: 2 of 4 updated replicas are available...
+Waiting for deployment "backend" rollout to finish: 3 of 4 updated replicas are available...
+deployment "backend" successfully rolled out
+01:10:43 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:43 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:43 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:44 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:44 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:44 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:45 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:45 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:45 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:46 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+--- НАКАТЫВАЕМ V2 ---
+deployment.apps/backend configured
+01:10:46 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:46 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:47 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:47 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:47 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:48 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:48 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:48 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:49 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:49 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:49 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:50 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:50 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:50 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:51 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:51 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:51 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:52 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:52 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:52 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:53 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:53 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:53 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:54 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:54 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:54 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:55 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:55 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:55 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:56 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:56 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:56 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:57 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:57 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:57 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:58 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:10:58 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+01:10:58 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:59 | Host: backend-6c76fc65dc-5gg6c, Version: v1.0.0
+01:10:59 | Host: backend-6c76fc65dc-8c46w, Version: v1.0.0
+01:10:59 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:11:00 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:11:00 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:11:00 | Host: backend-6c76fc65dc-wpvph, Version: v1.0.0
+01:11:01 | Host: backend-6c76fc65dc-qnm4s, Version: v1.0.0
+Waiting for deployment "backend" rollout to finish: 1 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 1 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 1 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 2 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 2 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 2 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 2 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 3 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 3 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 3 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 3 out of 4 new replicas have been updated...
+Waiting for deployment "backend" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "backend" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "backend" rollout to finish: 1 old replicas are pending termination...
+deployment "backend" successfully rolled out
